@@ -1,4 +1,8 @@
 2020-02-23 - Update 88_Strava.pm
+
+- revised cmd, delete cmd Data and added AuthApp & AuthRefresh
+- rename sub Strava_GetToken to Strava_AuthApp
+2020-02-23 - Update 88_Strava.pm
 2020-02-23 - Update README.md
 2020-02-23 - make FHEM structure
 2020-02-23 - Start Project 66_Strava.pm
