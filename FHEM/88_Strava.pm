@@ -59,14 +59,14 @@ sub Strava_Set($$$@) {
 sub Strava_Get($$$@) {
 	my ( $hash, $name, $cmd, @a ) = @_;
 	my $cmd2 = defined $a[0] ? $a[0] : "";
-	my $getlist = "Token:noArg ";
+	my $getlist = "Data:noArg ";
 	my $typ = $hash->{TYPE};
 
 	Log3 $name, 3, "$typ: Get, $cmd" if ($cmd ne "?");
 
-	if ($cmd eq "Token") {
+	if ($cmd eq "Data") {
 		## !!! only test, data must encrypted and not plain text !!! ##
-		return "Attrib Login or Password is failed" 
+		return "Some attributes failed! You need Client_ID, Client_Secret, Login, Password" 
 		if(!AttrVal($name, "Login", undef) || !AttrVal($name, "Password", undef) || 
 			 !AttrVal($name, "Client_ID", undef) || !AttrVal($name, "Client_Secret", undef));
 
@@ -97,6 +97,12 @@ sub Strava_GetToken($) {
 	my $Client_Secret = AttrVal($name, "Client_Secret", undef);
 	my $Login = AttrVal($name, "Login", undef);
 	my $Password = AttrVal($name, "Password", undef);
+
+	# 1) Anfrage GET mit Kunden-ID, nicht athlete_id -->
+	# 2) Eingabe Login Daten
+	# 3) Return Browser nach authentication (with code)
+	# 4) Absetzen POST
+	# 5) Return Information
 
   my($err,$data) = HttpUtils_BlockingGet({
     url => "https://www.strava.com/oauth/authorize",
