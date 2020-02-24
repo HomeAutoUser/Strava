@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-02-23 23:37:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-02-24 11:15:50Z HomeAuto_User $
 #################################################################
 
 package main;
@@ -59,12 +59,12 @@ sub Strava_Set($$$@) {
 sub Strava_Get($$$@) {
 	my ( $hash, $name, $cmd, @a ) = @_;
 	my $cmd2 = defined $a[0] ? $a[0] : "";
-	my $getlist = "AuthApp:noArg AuthRefresh:noArg";
+	my $getlist = "Activity:noArg AuthApp:noArg AuthRefresh:noArg";
 	my $typ = $hash->{TYPE};
 
 	Log3 $name, 3, "$typ: Get, $cmd" if ($cmd ne "?");
 
-	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh") {
+	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh" || $cmd eq "Activity") {
 		## !!! only test, data must encrypted and not plain text !!! ##
 		return "Some attributes failed! You need Client_ID, Client_Secret, Login, Password" 
 		if(!AttrVal($name, "Login", undef) || !AttrVal($name, "Password", undef) || 
@@ -72,14 +72,25 @@ sub Strava_Get($$$@) {
 			 !AttrVal($name,"Refresh_Token",undef));
 	}
 
-	if ($cmd eq "AuthApp") {
-		Strava_AuthApp($hash);
+	if ($cmd ne "?") {
+		foreach my $reading (keys %{$hash->{READINGS}}) {
+			readingsDelete($hash,$reading) if ($reading !~ /^state/);
+		}
+	}
+
+	if ($cmd eq "Activity") {
+		Strava_Activity($hash);
 		return undef;
+	};
+
+	if ($cmd eq "AuthApp") {
+		my $return = Strava_AuthApp($hash);
+		return $return;
 	};
 
 	if ($cmd eq "AuthRefresh") {
 		Strava_AuthRefresh($hash);
-		return undef;
+		return undef; 
 	};
 
 	return "Unknown argument $cmd, choose one of $getlist";
@@ -108,21 +119,21 @@ sub Strava_AuthApp($) {
 	my $Password = AttrVal($name, "Password", undef);
 	my $cb = "http://localhost/exchange_token";
 
-	# 1) Anfrage GET mit Kunden-ID, nicht athlete_id -->
+	# 1) Anfrage GET mit Kunden-ID, nicht athlete_id
 	# 2) Eingabe Login Daten
-	# 3) Return Browser nach authentication (with code)
+	# 3) Return Browser nach Authentication (Code im String, "... =&code={YOUR CODE}&scope= ...")
 	# 4) Absetzen POST
 	# 5) Return Information
 
-	## https://www.strava.com/oauth/authorize?client_id=08153311&response_type=code&redirect_uri=http://localhost/exchange_token&approval_prompt=force&scope=read_all
-	my $url = "https://www.strava.com/oauth/authorize?response_type=code&client_id=".$Client_ID."&scope=read_all&redirect_uri=".$cb;
+	my $scope = "read,read_all,profile:read_all,activity:read_all";
+	my $url = "https://www.strava.com/oauth/authorize?response_type=code&client_id=".$Client_ID."&scope=".$scope."&redirect_uri=".$cb;
 
 	my $datahash = {
-		url        => "https://www.strava.com/oauth/token",
+		url        => "https://www.strava.com/api/v3/oauth/token", # https://www.strava.com/api/v3/oauth/token | https://www.strava.com/oauth/token
 		method     => "POST",
 		timeout    => 10,
 		noshutdown => 1,
-		data       => { 
+		data       => {
 										client_id     => $Client_ID,
 										client_secret => $Client_Secret,
 										code          => $Code,
@@ -132,12 +143,23 @@ sub Strava_AuthApp($) {
 	};
 
 	my($err,$data) = HttpUtils_BlockingGet($datahash);
-	$err = $err eq "" ? "none" : $err;
 
-	readingsSingleUpdate( $hash, "HTTP_error", $err, 1 );
-	readingsSingleUpdate( $hash, "HTTP_response", $data, 1 );
-	readingsSingleUpdate( $hash, "HTTP_url", $url, 1 );
-	readingsSingleUpdate( $hash, "state", "AuthApp information", 1 );
+  if ($err ne "" || !defined($data) || $data =~ /Bad Request/) {
+    Log3 $name, 1, "$name: AuthApp, error: $err" if ($err ne "");
+		Log3 $name, 4, "$name: AuthApp, data: $data";
+		readingsSingleUpdate( $hash, "state", "AuthApp must generates new code with Strava-Login", 1 );
+
+		return "Please Login and authorize new code!\n".
+		"note: Code is return in following website [ ... =&code={YOUR CODE}&scope= ... ]".
+		"\n\n<a href=$url target=\"_blank\">$url</a>";
+  }
+
+	readingsBeginUpdate($hash);
+	readingsBulkUpdate( $hash, "HTTP_response", $data );
+	readingsBulkUpdate( $hash, "state", "AuthApp accomplished" );
+	readingsEndUpdate($hash, 1);
+
+	return undef;
 }
 
 ##########################
@@ -168,18 +190,75 @@ sub Strava_AuthRefresh($) {
 	};
 
 	my($err,$data) = HttpUtils_BlockingGet($datahash);
+
+  if ($err || !defined($data) || $data =~ /Authorization Error/ || $data =~ /not a valid/) {
+    Log3 $name, 1, "$name: AuthRefresh, ERROR: $err";
+    return undef;
+  }
+
+  my $json = eval { JSON::decode_json($data) };
+
+  if($@) {
+    Log3 $name, 1, "$name: AuthRefresh, JSON ERROR: $data";
+    return undef;
+  }
+
+  Log3 $name, 4, "$name: AuthRefresh, SUCCESS: $data";
+
+	readingsBeginUpdate($hash);
+	readingsBulkUpdate( $hash, "access_token", $json->{access_token} ) if(defined($json->{access_token}));
+	readingsBulkUpdate( $hash, "expires_at", $json->{expires_at} ) if(defined($json->{expires_at}));
+	readingsBulkUpdate( $hash, "expires_in", $json->{expires_in} ) if(defined($json->{expires_in}));
+	readingsBulkUpdate( $hash, "refresh_toke", $json->{refresh_toke} ) if(defined($json->{refresh_toke}));
+	readingsBulkUpdate( $hash, "token_type", $json->{token_type} ) if(defined($json->{token_type}));
+	readingsBulkUpdate( $hash, "state", "AuthRefresh accomplished" );
+	readingsEndUpdate($hash, 1);
+
+  #InternalTimer(gettimeofday()+$json->{expires_in}-60, "Strava_AuthRefresh", $hash, 0);
+
+	return undef;
+}
+
+##########################
+sub Strava_Activity($) {
+  my ($hash) = @_;
+	my $typ = $hash->{TYPE};
+	my $name = $hash->{NAME};
+
+	## !!! only test, data must encrypted and not plain text !!! ##
+	my $Client_ID = AttrVal($name, "Client_ID", undef);
+	my $Code = AttrVal($name, "Code", undef);
+
+	my $datahash = {
+										url => 'https://www.strava.com/api/v3/activities',
+										method => "GET",
+										timeout => 10,
+										noshutdown => 1,
+										data => { 
+															client_id        => $Client_ID,
+															approval_prompt  => 'force',
+															response_type    => $Code, # code
+															redirect_uri     => 'localhost',
+															scope            => 'read,read_all,profile:read_all,activity:read_all'
+														},
+	};
+
+	my($err,$data) = HttpUtils_BlockingGet($datahash);
 	$err = $err eq "" ? "none" : $err;
 
-	readingsSingleUpdate( $hash, "HTTP_error", $err, 1 );
-	readingsSingleUpdate( $hash, "HTTP_response", $data, 1 );
-	readingsSingleUpdate( $hash, "state", "AuthRefresh information", 1 );
+	readingsBeginUpdate($hash);
+	readingsBulkUpdate( $hash, "HTTP_error", $err );
+	readingsBulkUpdate( $hash, "HTTP_response", $data );
+	readingsBulkUpdate( $hash, "state", "AuthRefresh accomplished" );
+	readingsEndUpdate($hash, 1);
 }
+
 ########################## function is used to check and modify attributes
 sub Strava_Attr() {
 	my ($cmd, $name, $attrName, $attrValue) = @_;
 	my $hash = $defs{$name};
 	my $typ = $hash->{TYPE};
-	
+
 	Log3 $name, 3, "$typ: Attr | Attributes $attrName = $attrValue";
 }
 
@@ -199,9 +278,9 @@ sub Strava_Attr() {
 =begin html
 
 <a name="Strava"></a>
-<h3>example web modul</h3>
+<h3>Strava API</h3>
 <ul>
-This is an example web module.<br>
+This is an Strava API module.<br>
 </ul>
 =end html
 
@@ -209,9 +288,9 @@ This is an example web module.<br>
 =begin html_DE
 
 <a name="Strava"></a>
-<h3>Strava Modul</h3>
+<h3>Strava API</h3>
 <ul>
-Das ist ein Strava Modul.<br>
+Das ist ein Strava API Modul.<br>
 </ul>
 =end html_DE
 
