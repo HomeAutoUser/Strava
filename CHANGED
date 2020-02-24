@@ -1,3 +1,8 @@
+2020-02-24 - Update 88_Strava.pm
+
+- added GET Activity for test
+- revised AuthApp outpout for user
+- AuthRefresh take outout in readings for test
 2020-02-23 - Update 88_Strava.pm
 
 - revised cmd, delete cmd Data and added AuthApp & AuthRefresh
