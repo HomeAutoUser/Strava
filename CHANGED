@@ -1,3 +1,7 @@
+2020-02-25 - Update 88_Strava.pm
+
+- added get cmd athlete & activity for user
+- revised cmd AuthApp for better understandings
 2020-02-24 - Update 88_Strava.pm
 
 - added GET Activity for test
