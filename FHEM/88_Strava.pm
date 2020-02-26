@@ -39,6 +39,7 @@ sub Strava_Initialize($) {
 
 	$hash->{DefFn}    =	"Strava_Define";
 	$hash->{GetFn}    =	"Strava_Get";
+	$hash->{RenameFn} = "Strava_Rename";
 	$hash->{SetFn}    = "Strava_Set";
 	$hash->{UndefFn}  = "Strava_Undef";
 	$hash->{AttrFn}   = "Strava_Attr";
@@ -365,13 +366,29 @@ sub Strava_Undef($$) {
 }
 
 ##########################
+sub Strava_Rename(@) {
+	my ( $new, $old ) = @_;
+	my $hash = $defs{$new};
+
+	Log3 $hash->{NAME}, 3, "$hash->{NAME}: Rename $old to $new";
+
+	## need FIX, after rename value not found ##
+	## value from read is undefind !!!
+	Log3 $hash->{NAME}, 3, "$hash->{NAME}: ".Strava_ReadValue($hash,"Client_ID");
+
+	Strava_StoreValue( $hash, "Client_ID", Strava_ReadValue($hash,"Client_ID") ); ## NEED FIX ##
+	setKeyValue( $hash->{TYPE} . "_" . $old . "_Client_ID", undef );
+	return undef;
+}
+
+##########################
 sub Strava_StoreValue($$$) {
 	my ( $hash, $valuename, $value ) = @_;
 	my $name    = $hash->{NAME};
 	my $type    = $hash->{TYPE};
 	my $index   = $type . "_" . $name . "_$valuename";
 	my $key     = getUniqueId() . $index;
-	my $enc_pwd = "";
+	my $enc_val = "";
 
 	if ( eval "use Digest::MD5;1" ) {
 		$key  = Digest::MD5::md5_hex( unpack "H*", $key );
@@ -380,11 +397,11 @@ sub Strava_StoreValue($$$) {
 
 	for my $char ( split //, $value ) {
 		my $encode = chop($key);
-		$enc_pwd .= sprintf( "%.2x", ord($char) ^ ord($encode) );
+		$enc_val .= sprintf( "%.2x", ord($char) ^ ord($encode) );
 		$key = $encode . $key;
 	}
 
-	my $err = setKeyValue( $index, $enc_pwd );
+	my $err = setKeyValue( $index, $enc_val );
 	return "ERROR: while saving $valuename - $err" if ( defined($err) );
 	return "$valuename successfully saved";
 }
@@ -399,27 +416,27 @@ sub Strava_ReadValue($$) {
 
 	Log3 $name, 4, "$name: ReadValue - Read $valuename from file";
 
-	( $err, $$value ) = getKeyValue($index);
+	( $err, $value ) = getKeyValue($index);
 
 	if ( defined($err) ) {
 		Log3 $name, 3, "$name: ReadValue - unable to read $valuename from file: $err";
 		return undef;
 	}
 
-	if ( defined($$value) ) {
+	if ( defined($value) ) {
 		if ( eval "use Digest::MD5;1" ) {
 			$key = Digest::MD5::md5_hex( unpack "H*", $key );
 			$key .= Digest::MD5::md5_hex($key);
 		}
 
-		my $dec_pwd = '';
+		my $dec_val = '';
 
-		for my $char ( map { pack( 'C', hex($_) ) } ( $$value =~ /(..)/g ) ) {
+		for my $char ( map { pack( 'C', hex($_) ) } ( $value =~ /(..)/g ) ) {
 			my $decode = chop($key);
-			$dec_pwd .= chr( ord($char) ^ ord($decode) );
+			$dec_val .= chr( ord($char) ^ ord($decode) );
 			$key = $decode . $key;
 		}
-		return $dec_pwd;
+		return $dec_val;
 
 	} else {
 		Log3 $name, 3, "$name: ReadValue - No $valuename in file";
