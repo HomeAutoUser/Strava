@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-02-25 12:15:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-02-26 17:15:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -135,26 +135,27 @@ sub Strava_Get($$$@) {
 ########################## ########################## ##########################
 sub Strava_Data_exchange($$$) {
 	my ($hash,$cmd,$cmd2) = @_;
-	my $typ = $hash->{TYPE};
-	my $name = $hash->{NAME};
 	my $access_token = $hash->{helper}{access_token} ? $hash->{helper}{access_token} : "";
 	my $datahash;
+	my $name = $hash->{NAME};
+	my $state;
+	my $typ = $hash->{TYPE};
 	my $url;
 	my $Client_ID = AttrVal($name, "Client_ID", undef);
 
-  Log3 $name, 3, "$name: Data_exchange, was calling with command $cmd";
+  Log3 $name, 4, "$name: Data_exchange, was calling with command $cmd";
 
 #### all data parameters ####
 	if ($cmd eq "AuthApp") { # https://developers.strava.com/docs/authentication/#oauthoverview
-		Log3 $name, 3, "$name: Data_exchange - $cmd parameters are loaded";
+		Log3 $name, 4, "$name: Data_exchange - $cmd parameters are loaded";
 		my $callback = "http://localhost/exchange_token";
 		# https://developers.strava.com/docs/authentication/#detailsaboutrequestingaccess
 		# Todo, for user one attribut ???
 		my $scope = "read,read_all,profile:read_all,activity:read_all";
 		$url = "https://www.strava.com/oauth/authorize?response_type=code&client_id=".$Client_ID."&scope=".$scope."&redirect_uri=".$callback;
 
-		Log3 $name, 3, "$name: Data_exchange - $cmd POST ".$url;
-		Log3 $name, 3, "$name: Data_exchange - $cmd access_token: $access_token";
+		Log3 $name, 4, "$name: Data_exchange - $cmd POST ".$url;
+		Log3 $name, 5, "$name: Data_exchange - $cmd access_token: $access_token";
 
 		$datahash = {	url        => "https://www.strava.com/api/v3/oauth/token",
 									method     => "POST",
@@ -186,7 +187,7 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "Deauth") { # https://developers.strava.com/docs/authentication/#deauthorization
 		$url = "https://www.strava.com/api/v3/oauth/token/deauthorize?access_token=".$access_token;
-		Log3 $name, 3, "$name: Data_exchange - $cmd GET ".$url;
+		Log3 $name, 4, "$name: Data_exchange - $cmd POST ".$url;
 
 		$datahash =  {	url        => $url,
 										method     => "POST",
@@ -204,7 +205,7 @@ sub Strava_Data_exchange($$$) {
 
 		my $activities = $cmd2 ne "" ? "activities/$cmd2" : "activities";
 		$url = 'https://www.strava.com/api/v3/'.$activities.'?access_token='.$access_token;
-		Log3 $name, 3, "$name: Data_exchange - $cmd GET ".$url;
+		Log3 $name, 4, "$name: Data_exchange - $cmd GET ".$url;
 
 		$datahash = {	url        => $url,
 									method     => "GET",
@@ -215,7 +216,7 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "athlete") { # https://developers.strava.com/docs/reference/#api-Athletes
 		## athlete - statistic to user ##
-		Log3 $name, 3, "$name: Data_exchange - $cmd GET ".'https://www.strava.com/api/v3/athlete?access_token='.$access_token;
+		Log3 $name, 4, "$name: Data_exchange - $cmd GET ".'https://www.strava.com/api/v3/athlete?access_token='.$access_token;
 
 		$datahash = {	url        => 'https://www.strava.com/api/v3/athlete?access_token='.$access_token,
 									method     => "GET",
@@ -249,35 +250,31 @@ sub Strava_Data_exchange($$$) {
 	if ($cmd eq "AuthRefresh") {
 		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /not a valid/ || $data =~ /Bad Request/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
-			readingsSingleUpdate( $hash, "state", "Error: $cmd, no data retrieval", 1 );
-			return undef;
+			$state = "Error: $cmd, no data retrieval";
 		}
 	}
 
 	if ($cmd eq "Deauth") {
 		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /not a valid/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
-			readingsSingleUpdate( $hash, "state", "Error: $cmd, no data retrieval", 1 );
-			return undef;
+			$state = "Error: $cmd, no data retrieval";
 		}
 	}
 
-	if($cmd eq "activity") {
+	if($cmd eq "activity" || $cmd eq "athlete") {
 		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /invalid/ || $data =~ /Resource Not Found/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
-			readingsSingleUpdate( $hash, "state", "Error: $cmd, no data retrieval", 1 );
-			return undef;
+
+			$state = "Error: $cmd, no data retrieval";
+			$state = "Error: $cmd not found" if ($cmd eq "activity" && $data =~ /Record Not Found/);
 		}
 	}
 
-	if ($cmd eq "athlete") {
-		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /invalid/) {
-			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
-			readingsSingleUpdate( $hash, "state", "Error: $cmd, no data retrieval", 1 );
-			return undef;
-		}
+	## returns ERROR ##
+	if ($state) {
+		readingsSingleUpdate( $hash, "state", $state, 1 );
+		return undef;
 	}
-
 #### END returns ERROR ####
 
   my $json = eval { JSON::decode_json($data) };
@@ -310,7 +307,15 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "Deauth") {
-		delete $hash->{token_expires_at} if($hash->{token_expires_at});
+		## delete helpers ##
+		foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at access_token )) {
+			delete $hash->{helper}{$value} if(defined($hash->{helper}{$value}));
+		}
+
+		## delete some internals ##
+		foreach my $value (qw( token_expires_at )) {
+			delete $hash->{$value} if(defined($hash->{$value}));
+		}		
 	}
 
 	readingsSingleUpdate( $hash, "state", "$cmd accomplished", 1 );
