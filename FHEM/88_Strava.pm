@@ -27,10 +27,11 @@ use strict;
 use warnings;
 
 use LWP;
-use JSON;
-use Data::Dumper qw (Dumper);
-
 use HttpUtils;					# um Daten via HTTP auszutauschen https://wiki.fhem.de/wiki/HttpUtils
+
+my $missingModul		= "";
+eval "use JSON;1" or $missingModul .= "JSON ";
+eval "use Digest::MD5;1" or $missingModul .= "Digest::MD5 ";
 
 ##########################
 sub Strava_Initialize($) {
@@ -54,6 +55,7 @@ sub Strava_Define($$) {
 	my $typ = $hash->{TYPE};
 
 	return "Usage: define <name> $name"  if(@arg != 2);
+	return "Cannot define $name device. Perl modul ${missingModul} is missing." if ( $missingModul );
 
 	### default value´s ###
 	readingsBeginUpdate($hash);
@@ -66,21 +68,19 @@ sub Strava_Define($$) {
 sub Strava_Set($$$@) {
 	my ( $hash, $name, @a ) = @_;
 	my $typ = $hash->{TYPE};
-	my $setList = "AuthApp_code ";
+	my $setList = "AuthApp_code Client_Secret Client_Secret_delete:noArg";
 	$setList.= "Deauth:noArg " if($hash->{helper}{AuthApp} && $hash->{helper}{AuthApp} eq "SUCCESS");
 	return "no set value specified" if(int(@a) < 1);
 
 	my $cmd = $a[0];
 	my $cmd2 = defined $a[1] ? $a[1] : "";
 
-	Log3 $name, 3, "$typ: Set, $cmd" if ($cmd ne "?");
+	Log3 $name, 4, "$typ: Set, $cmd" if ($cmd ne "?");
 
 	if ($cmd eq "AuthApp_code") {
-		if ($cmd2 eq "") {
-			return "ERROR: $cmd failed argument";
-		} else {
-			$hash->{helper}{access_token} = $cmd2;
-		}
+		return "ERROR: $cmd failed argument" if ($cmd2 eq "");
+
+		$hash->{helper}{access_token} = $cmd2;
 	}
 
 	if ($cmd eq "Deauth") {
@@ -88,7 +88,19 @@ sub Strava_Set($$$@) {
 		FW_directNotify("FILTER=room=$FW_room", "#FHEMWEB:$FW_wname", "location.reload('true')", "");
 		return undef;
 	};
+	
+	if ($cmd eq "Client_Secret") {
+		return "ERROR: $cmd failed argument" if ($cmd2 eq "");
 
+		my $return = Strava_StoreValue($hash,$cmd,$cmd2);
+		return $return;
+	}
+	
+	if ($cmd eq "Client_Secret_delete") {
+		my $return = Strava_DeleteValue($hash,"Client_Secret");
+		return $return;
+	}
+	
 	return "Unknown argument $cmd, choose one of $setList" if (index($setList, $cmd) == -1);
 }
 
@@ -96,11 +108,11 @@ sub Strava_Set($$$@) {
 sub Strava_Get($$$@) {
 	my ( $hash, $name, $cmd, @a ) = @_;
 	my $cmd2 = defined $a[0] ? $a[0] : "";
-	my $getlist = "AuthApp:noArg AuthRefresh:noArg ";
+	my $getlist = "AuthApp:noArg AuthRefresh:noArg Client_Secret:noArg";
 	$getlist.= "activity athlete:noArg " if($hash->{helper}{AuthApp} && $hash->{helper}{AuthApp} eq "SUCCESS");
 	my $typ = $hash->{TYPE};
 
-	Log3 $name, 3, "$name: Get, $cmd" if ($cmd ne "?");
+	Log3 $name, 4, "$name: Get, $cmd" if ($cmd ne "?");
 
 	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh" || $cmd eq "activity" || $cmd eq "Deauth") {
 		## !!! only test, data must encrypted and not plain text !!! ##
@@ -127,6 +139,11 @@ sub Strava_Get($$$@) {
 	if ($cmd eq "AuthRefresh") {
 		Strava_Data_exchange($hash,$cmd,undef);
 		return undef; 
+	};
+	
+	if ($cmd eq "Client_Secret") {
+		my $return = Strava_ReadValue($hash,$cmd);
+		return $return;
 	};
 
 	return "Unknown argument $cmd, choose one of $getlist";
@@ -155,7 +172,6 @@ sub Strava_Data_exchange($$$) {
 		$url = "https://www.strava.com/oauth/authorize?response_type=code&client_id=".$Client_ID."&scope=".$scope."&redirect_uri=".$callback;
 
 		Log3 $name, 4, "$name: Data_exchange - $cmd POST ".$url;
-		Log3 $name, 5, "$name: Data_exchange - $cmd access_token: $access_token";
 
 		$datahash = {	url        => "https://www.strava.com/api/v3/oauth/token",
 									method     => "POST",
@@ -349,6 +365,76 @@ sub Strava_Undef($$) {
 }
 
 ##########################
+sub Strava_StoreValue($$$) {
+	my ( $hash, $valuename, $value ) = @_;
+	my $name    = $hash->{NAME};
+	my $type    = $hash->{TYPE};
+	my $index   = $type . "_" . $name . "_$valuename";
+	my $key     = getUniqueId() . $index;
+	my $enc_pwd = "";
+
+	if ( eval "use Digest::MD5;1" ) {
+		$key  = Digest::MD5::md5_hex( unpack "H*", $key );
+		$key .= Digest::MD5::md5_hex($key);
+	}
+
+	for my $char ( split //, $value ) {
+		my $encode = chop($key);
+		$enc_pwd .= sprintf( "%.2x", ord($char) ^ ord($encode) );
+		$key = $encode . $key;
+	}
+
+	my $err = setKeyValue( $index, $enc_pwd );
+	return "ERROR: while saving $valuename - $err" if ( defined($err) );
+	return "$valuename successfully saved";
+}
+
+##########################
+sub Strava_ReadValue($$) {
+	my ($hash, $valuename) = @_;
+	my $name   = $hash->{NAME};
+	my $index  = $hash->{TYPE} . "_" . $hash->{NAME} . "_$valuename";
+	my $key    = getUniqueId() . $index;
+	my ( $value, $err );
+
+	Log3 $name, 4, "$name: ReadValue - Read $valuename from file";
+
+	( $err, $$value ) = getKeyValue($index);
+
+	if ( defined($err) ) {
+		Log3 $name, 3, "$name: ReadValue - unable to read $valuename from file: $err";
+		return undef;
+	}
+
+	if ( defined($$value) ) {
+		if ( eval "use Digest::MD5;1" ) {
+			$key = Digest::MD5::md5_hex( unpack "H*", $key );
+			$key .= Digest::MD5::md5_hex($key);
+		}
+
+		my $dec_pwd = '';
+
+		for my $char ( map { pack( 'C', hex($_) ) } ( $$value =~ /(..)/g ) ) {
+			my $decode = chop($key);
+			$dec_pwd .= chr( ord($char) ^ ord($decode) );
+			$key = $decode . $key;
+		}
+		return $dec_pwd;
+
+	} else {
+		Log3 $name, 3, "$name: ReadValue - No $valuename in file";
+		return undef;
+	}
+}
+
+##########################
+sub Strava_DeleteValue($$) {
+	my ($hash, $valuename) = @_;
+	setKeyValue( $hash->{TYPE} . "_" . $hash->{NAME} . "_$valuename", undef );
+	return "delete";
+}
+
+####################################################
 # Eval-Rückgabewert für erfolgreiches
 # Laden des Moduls
 1;
