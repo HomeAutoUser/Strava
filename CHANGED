@@ -1,3 +1,8 @@
+2020-02-27 - Update 88_Strava.pm
+
+- revised code
+- move Client_Secret & Refresh_Token in secure area
+- remove some attribs
 2020-02-26 - Merge branch 'pre-release_with_encrypt' of https://github.com/HomeAutoUser/Strava into pre-release_with_encrypt
 2020-02-26 - Merge branch 'pre-release_with_encrypt' of https://github.com/HomeAutoUser/Strava into pre-release_with_encrypt
 2020-02-26 - Automaitc updated controls and CHANGED
