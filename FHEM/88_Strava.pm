@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-02 15:45:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-03 00:45:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -110,7 +110,7 @@ sub Strava_Get($$$@) {
 	my ( $hash, $name, $cmd, @a ) = @_;
 	my $cmd2 = defined $a[0] ? $a[0] : "";
 	my $getlist = "AuthApp:noArg AuthRefresh:noArg Client_Secret:noArg Refresh_Token:noArg ";
-	$getlist.= "activity athlete:noArg " if($hash->{helper}{AuthApp} && $hash->{helper}{AuthApp} eq "SUCCESS");
+	$getlist.= "activity athlete:noArg stats:noArg" if($hash->{helper}{AuthApp} && $hash->{helper}{AuthApp} eq "SUCCESS");
 	my $typ = $hash->{TYPE};
 
 	Log3 $name, 4, "$name: Get, $cmd" if ($cmd ne "?");
@@ -134,6 +134,11 @@ sub Strava_Get($$$@) {
 		Strava_Data_exchange($hash,$cmd,undef);
 		return undef;
 	};
+
+	if ($cmd eq "stats") {
+		Strava_Data_exchange($hash,$cmd,undef);
+		return undef;
+	}
 
 	if ($cmd eq "AuthApp") {
 		my $return = Strava_Data_exchange($hash,$cmd,undef);
@@ -248,6 +253,22 @@ sub Strava_Data_exchange($$$) {
 		};
 	}
 
+	if ($cmd eq "stats") { # https://developers.strava.com/docs/reference/#api-Athletes-getStats
+		## statistic of user ##
+		if (ReadingsVal($name, "athlete_id", undef)) {
+			$url = 'https://www.strava.com/api/v3/athletes/'.ReadingsVal($name, "athlete_id", undef).'/stats?access_token='.$access_token;
+			Log3 $name, 4, "$name: Data_exchange - $cmd GET ".$url;
+
+			$datahash = {	url        => $url,
+										method     => "GET",
+										timeout    => 10,
+										noshutdown => 1,
+			};
+		} else {
+			return "ERROR: your athlete_id reading is not found";
+		}
+	}
+
 #### END data parameters ####
 
 	my($err,$data) = HttpUtils_BlockingGet($datahash);
@@ -284,7 +305,7 @@ sub Strava_Data_exchange($$$) {
 		}
 	}
 
-	if($cmd eq "activity" || $cmd eq "athlete") {
+	if($cmd eq "activity" || $cmd eq "athlete" || $cmd eq "stats") {
 		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /invalid/ || $data =~ /Resource Not Found/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
 
@@ -311,23 +332,35 @@ sub Strava_Data_exchange($$$) {
 
 #### informations & action ####
 
+	readingsBeginUpdate($hash);
+
 	if ($cmd eq "AuthApp") {
 		$hash->{_AuthApp_access_token} = $json->{access_token} if(defined($json->{access_token})); ## for test
 		$hash->{helper}{AuthApp_expires_at} = $json->{expires_at} if(defined($json->{expires_at}));
-
-		readingsBeginUpdate($hash);
-		my $athlete_name = "";
-		$athlete_name.= $json->{athlete}->{firstname} if(defined($json->{athlete}->{firstname}));
-		$athlete_name.= " ".$json->{athlete}->{lastname} if(defined($json->{athlete}->{lastname}));
-		$athlete_name.= " (".$json->{athlete}->{sex}.")" if(defined($json->{athlete}->{sex}));
-		readingsBulkUpdate($hash, "athlete_name" , $athlete_name);
 
 		my $athlete_adress = "";
 		$athlete_adress.= $json->{athlete}->{country} if(defined($json->{athlete}->{country}));
 		$athlete_adress.= ", ".$json->{athlete}->{state} if(defined($json->{athlete}->{state}));
 		$athlete_adress.= ", ".$json->{athlete}->{city} if(defined($json->{athlete}->{city}));
 		readingsBulkUpdate($hash, "athlete_adress" , $athlete_adress);
-		readingsEndUpdate($hash, 0);
+
+		readingsBulkUpdate($hash, "athlete_id" , $json->{athlete}->{id}) if(defined($json->{athlete}->{id}));
+
+		my $athlete_name = "";
+		$athlete_name.= $json->{athlete}->{firstname} if(defined($json->{athlete}->{firstname}));
+		$athlete_name.= " ".$json->{athlete}->{lastname} if(defined($json->{athlete}->{lastname}));
+		$athlete_name.= " (".$json->{athlete}->{sex}.")" if(defined($json->{athlete}->{sex}));
+		readingsBulkUpdate($hash, "athlete_name" , $athlete_name);
+		
+		my $athlete_account = "";
+		my $created_at = $json->{athlete}->{created_at} if(defined($json->{athlete}->{created_at})); # 2013-07-22T12:07:10Z
+		$created_at = "created: ".substr($created_at,0,10);
+		$athlete_account.= $created_at;
+		my $updated_at = $json->{athlete}->{updated_at} if(defined($json->{athlete}->{updated_at})); # 2020-02-24T17:14:03Z
+		$updated_at = ", updated: ".substr($updated_at,0,10).", ";
+		$athlete_account.= $updated_at;
+		$athlete_account.= $json->{athlete}->{premium} eq 1 ? "premium" : "no premium" if(defined($json->{athlete}->{premium}));
+		readingsBulkUpdate($hash, "athlete_account" , $athlete_account);
 	}
 
 	if ($cmd eq "AuthRefresh") {
@@ -339,7 +372,7 @@ sub Strava_Data_exchange($$$) {
 		#InternalTimer(gettimeofday()+$json->{expires_in}-60, "Strava_AuthRefresh", $hash, 0);
 	}
 
-	if ($cmd eq "AuthRefresh" || $cmd eq "AuthRefresh") {
+	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh") {
 		$hash->{helper}{AuthApp} = "SUCCESS" if!($hash->{helper}{AuthApp});	
 		$hash->{helper}{access_token} = $json->{access_token} if(defined($json->{access_token}));
 	}
@@ -353,11 +386,37 @@ sub Strava_Data_exchange($$$) {
 		## delete some internals ##
 		foreach my $value (qw( token_expires_at )) {
 			delete $hash->{$value} if(defined($hash->{$value}));
-		}		
+		}
 	}
 
-	readingsSingleUpdate( $hash, "state", "$cmd accomplished", 1 );
+	if ($cmd eq "athlete") {
+		my $athlete_counts = "";
+		$athlete_counts = "friend: " . $json->{friend_count} if(defined($json->{friend_count}));
+		$athlete_counts.= " , follower_requests: ".$json->{follower_count} if(defined($json->{follower_count}));
+		readingsBulkUpdate( $hash, "athlete_counts", $athlete_counts );
 
+		my $athlete_info = "";
+		$athlete_info = "weight: " . $json->{weight} . " , " if(defined($json->{weight}));
+		$athlete_info.= "FTP: " . $json->{ftp} ." watt" if(defined($json->{ftp}));
+		readingsBulkUpdate( $hash, "athlete_info", $athlete_info );
+
+		$hash->{helper}{measurement_preference} = $json->{measurement_preference} if(defined($json->{measurement_preference}));
+	}
+
+	if ($cmd eq "stats") {
+		my $divider = 1;
+		my $divider_txt = "";
+		if ($hash->{helper}{measurement_preference} && $hash->{helper}{measurement_preference} eq "meters") {
+			$divider = 1000;
+			$divider_txt = "km";
+		}
+		## ToDo - Meilen ???
+
+		readingsBulkUpdate( $hash, "biggest_ride_distance", (sprintf "%.2f", ($json->{biggest_ride_distance} / $divider)) . " " . $divider_txt ) if(defined($json->{biggest_ride_distance}));
+	}
+
+	readingsBulkUpdate( $hash, "state", "$cmd accomplished" );
+	readingsEndUpdate($hash, 1);
 #### END informations & action ####
 
 	return undef;
@@ -380,7 +439,7 @@ sub Strava_Undef($$) {
 
 	RemoveInternalTimer($hash);
 
-	foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at AuthRefresh_refresh_toke access_token )) {
+	foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at AuthRefresh_refresh_toke access_token measurement_preference )) {
 		delete $hash->{helper}{$value} if(defined($hash->{helper}{$value}));
 	}
 	return undef;
