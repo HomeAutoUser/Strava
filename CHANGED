@@ -1,3 +1,7 @@
+2020-03-02 - Update 88_Strava.pm
+
+- added cmd stats
+- revised userreadings athlete_account, athlete_counts, athlete_info, athlete_name,  athlete_id, biggest_ride_distance
 2020-03-02 - Automaitc updated controls and CHANGED
 2020-03-02 - Update 88_Strava.pm
 
