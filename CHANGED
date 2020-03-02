@@ -1,3 +1,7 @@
+2020-03-02 - Update 88_Strava.pm
+
+- fix getlist
+- added user info athlete_name & athlete_adress
 2020-02-27 - Update 88_Strava.pm
 
 - revised code
