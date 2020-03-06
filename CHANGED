@@ -1,5 +1,10 @@
 2020-03-06 - Update 88_Strava.pm
 
+- fix, delete token if modul deleted
+- fix, save acces_token if FHEM shutdown
+- remove wrong attribut event-min-interval
+2020-03-06 - Update 88_Strava.pm
+
 - added commandref and logfile
 2020-03-06 - Update 88_Strava.pm
 
