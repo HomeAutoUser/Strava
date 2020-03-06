@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-03 00:45:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-06 15:20:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -163,6 +163,7 @@ sub Strava_Data_exchange($$$) {
 	my ($hash,$cmd,$cmd2) = @_;
 	my $access_token = $hash->{helper}{access_token} ? $hash->{helper}{access_token} : "";
 	my $datahash;
+	my $method;
 	my $name = $hash->{NAME};
 	my $state;
 	my $typ = $hash->{TYPE};
@@ -182,11 +183,10 @@ sub Strava_Data_exchange($$$) {
 		# Todo, for user one attribut ???
 		my $scope = "read,read_all,profile:read_all,activity:read_all";
 		$url = "https://www.strava.com/oauth/authorize?response_type=code&client_id=".$Client_ID."&scope=".$scope."&redirect_uri=".$callback;
-
-		Log3 $name, 4, "$name: Data_exchange - $cmd POST ".$url;
+		$method = "POST";
 
 		$datahash = {	url        => "https://www.strava.com/api/v3/oauth/token",
-									method     => "POST",
+									method     => $method,
 									timeout    => 10,
 									noshutdown => 1,
 									data       => {
@@ -200,8 +200,11 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "AuthRefresh") { # https://developers.strava.com/docs/authentication/#tokenexchange
+		$url = 'https://www.strava.com/api/v3/oauth/token?client_id='.$Client_ID.'&client_secret='.$Client_Secret.'&grant_type=refresh_token&refresh_token='.$Refresh_Token;
+		$method = "POST";
+
 		$datahash =  {	url        => "https://www.strava.com/api/v3/oauth/token",
-										method     => "POST",
+										method     => $method,
 										timeout    => 10,
 										noshutdown => 1,
 										data       => {
@@ -215,10 +218,10 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "Deauth") { # https://developers.strava.com/docs/authentication/#deauthorization
 		$url = "https://www.strava.com/api/v3/oauth/token/deauthorize?access_token=".$access_token;
-		Log3 $name, 4, "$name: Data_exchange - $cmd POST ".$url;
+		$method = "POST";
 
 		$datahash =  {	url        => $url,
-										method     => "POST",
+										method     => $method,
 										timeout    => 10,
 										noshutdown => 1,
 		};
@@ -233,10 +236,10 @@ sub Strava_Data_exchange($$$) {
 
 		my $activities = $cmd2 ne "" ? "activities/$cmd2" : "activities";
 		$url = 'https://www.strava.com/api/v3/'.$activities.'?access_token='.$access_token;
-		Log3 $name, 4, "$name: Data_exchange - $cmd GET ".$url;
+		$method = "GET";
 
 		$datahash = {	url        => $url,
-									method     => "GET",
+									method     => $method,
 									timeout    => 10,
 									noshutdown => 1,
 		};
@@ -244,10 +247,11 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "athlete") { # https://developers.strava.com/docs/reference/#api-Athletes
 		## athlete - statistic to user ##
-		Log3 $name, 4, "$name: Data_exchange - $cmd GET ".'https://www.strava.com/api/v3/athlete?access_token='.$access_token;
+		$url = 'https://www.strava.com/api/v3/athlete?access_token='.$access_token;
+		$method = "GET";
 
-		$datahash = {	url        => 'https://www.strava.com/api/v3/athlete?access_token='.$access_token,
-									method     => "GET",
+		$datahash = {	url        => $url,
+									method     => $method,
 									timeout    => 10,
 									noshutdown => 1,
 		};
@@ -257,10 +261,10 @@ sub Strava_Data_exchange($$$) {
 		## statistic of user ##
 		if (ReadingsVal($name, "athlete_id", undef)) {
 			$url = 'https://www.strava.com/api/v3/athletes/'.ReadingsVal($name, "athlete_id", undef).'/stats?access_token='.$access_token;
-			Log3 $name, 4, "$name: Data_exchange - $cmd GET ".$url;
+			$method = "GET";
 
 			$datahash = {	url        => $url,
-										method     => "GET",
+										method     => $method,
 										timeout    => 10,
 										noshutdown => 1,
 			};
@@ -271,6 +275,7 @@ sub Strava_Data_exchange($$$) {
 
 #### END data parameters ####
 
+	Log3 $name, 4, "$name: Data_exchange -> $method $url" if ($method);
 	my($err,$data) = HttpUtils_BlockingGet($datahash);
 	Log3 $name, 1, "$name: Data_exchange - $cmd error: $err" if ($err ne "");
 
@@ -291,15 +296,8 @@ sub Strava_Data_exchange($$$) {
 		}
 	}
 
-	if ($cmd eq "AuthRefresh") {
+	if ($cmd eq "AuthRefresh" || $cmd eq "Deauth") {
 		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /not a valid/ || $data =~ /Bad Request/) {
-			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
-			$state = "Error: $cmd, no data retrieval";
-		}
-	}
-
-	if ($cmd eq "Deauth") {
-		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /not a valid/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
 			$state = "Error: $cmd, no data retrieval";
 		}
@@ -390,15 +388,15 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "athlete") {
-		my $athlete_counts = "";
+		my $athlete_counts;
 		$athlete_counts = "friend: " . $json->{friend_count} if(defined($json->{friend_count}));
 		$athlete_counts.= " , follower_requests: ".$json->{follower_count} if(defined($json->{follower_count}));
-		readingsBulkUpdate( $hash, "athlete_counts", $athlete_counts );
+		readingsBulkUpdate( $hash, "athlete_counts", $athlete_counts ) if ($athlete_counts);
 
-		my $athlete_info = "";
+		my $athlete_info;
 		$athlete_info = "weight: " . $json->{weight} . " , " if(defined($json->{weight}));
 		$athlete_info.= "FTP: " . $json->{ftp} ." watt" if(defined($json->{ftp}));
-		readingsBulkUpdate( $hash, "athlete_info", $athlete_info );
+		readingsBulkUpdate( $hash, "athlete_info", $athlete_info ) if ($athlete_info);
 
 		$hash->{helper}{measurement_preference} = $json->{measurement_preference} if(defined($json->{measurement_preference}));
 	}
