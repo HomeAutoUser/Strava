@@ -37,14 +37,16 @@ eval "use Digest::MD5;1" or $missingModul .= "Digest::MD5 ";
 sub Strava_Initialize($) {
 	my ($hash) = @_;
 
-	$hash->{DefFn}    =	"Strava_Define";
-	$hash->{GetFn}    =	"Strava_Get";
-	$hash->{RenameFn} = "Strava_Rename";
-	$hash->{SetFn}    = "Strava_Set";
-	$hash->{UndefFn}  = "Strava_Undef";
-	$hash->{AttrFn}   = "Strava_Attr";
-	$hash->{AttrList} = "disable ".
-											"$readingFnAttributes";
+	$hash->{DefFn}      = "Strava_Define";
+	$hash->{GetFn}      = "Strava_Get";
+	$hash->{NotifyFn}   = "Strava_Notify";
+	$hash->{RenameFn}   = "Strava_Rename";
+	$hash->{ShutdownFn} = "Strava_Shutdown";
+	$hash->{SetFn}      = "Strava_Set";
+	$hash->{UndefFn}    = "Strava_Undef";
+	$hash->{AttrFn}     = "Strava_Attr";
+	$hash->{AttrList}   = "disable ".
+												"$readingFnAttributes";
 }
 
 ##########################
@@ -80,7 +82,6 @@ sub Strava_Define($$) {
 
 		### Attributes ###
 		CommandAttr($hash,"$name room $typ") if (!defined AttrVal($name, "room", undef));
-		CommandAttr($hash,"$name event-min-interval .*:300") if (!defined AttrVal($name, "event-min-interval", undef));
 		CommandAttr($hash,"$name event-on-change-reading .*") if (!defined AttrVal($name, "event-on-change-reading", undef));
 	}
 
@@ -148,7 +149,7 @@ sub Strava_Get($$$@) {
 			my $return = Strava_ReadValue($hash,$name,$value);
 
 			return "ERROR: necessary $value token failed!\n\nPlease set this token with cmd \"set $name $value\""
-			if ($return eq "ERROR: No $value token found");
+			if ($return eq "ERROR: No $value value found");
 		}
 	}
 
@@ -398,7 +399,7 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh") {
-		$hash->{helper}{AuthApp} = "SUCCESS" if!($hash->{helper}{AuthApp});	
+		$hash->{helper}{AuthApp} = "SUCCESS" if!($hash->{helper}{AuthApp});
 		$hash->{helper}{access_token} = $json->{access_token} if(defined($json->{access_token}));
 	}
 
@@ -514,7 +515,56 @@ sub Strava_Undef($$) {
 	foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at AuthRefresh_refresh_toke access_token measurement_preference )) {
 		delete $hash->{helper}{$value} if(defined($hash->{helper}{$value}));
 	}
+
+	foreach my $value (qw( Client_Secret Refresh_Token access_token )) {
+		my $return = Strava_ReadValue($hash,$name,$value);
+		setKeyValue( $hash->{TYPE} . "_" . $name . "_$value", undef ) if ($return ne "ERROR: No $value token found");
+	}
+
 	return undef;
+}
+
+#####################
+sub Strava_Notify($$) {
+	my ($hash, $dev_hash) = @_;
+	my $name = $hash->{NAME};
+	my $typ = $hash->{TYPE};
+	return "" if(IsDisabled($name));	               # Return without any further action if the module is disabled
+	my $devName = $dev_hash->{NAME};	               # Device that created the events
+	my $events = deviceEvents($dev_hash, 1);
+
+	if($devName eq "global" && grep(m/^INITIALIZED|REREADCFG$/, @{$events}) && $typ eq "Strava") {
+		Log3 $name, 4, "$name: Notify is running and starting";
+
+		my $return = Strava_ReadValue($hash,$name,"access_token");
+		if ($return ne "ERROR: No access_token value found") {
+			Log3 $name, 5, "$name: Notify - read access_token";
+			$hash->{helper}{access_token} = Strava_ReadValue($hash,$name,"access_token");
+			$hash->{helper}{AuthApp} = "SUCCESS";
+		}
+	}
+	return undef;
+}
+
+#####################
+sub Strava_Shutdown ($) {
+	my ( $hash ) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $name, 4, "$name: Shutdown is running";
+
+	if ($hash->{helper}{access_token}) {
+		my $return = Strava_ReadValue($hash,$name,"access_token");
+
+		if ($return eq "ERROR: No access_token value found") {
+			Log3 $name, 5, "$name: Shutdown - save access_token";
+			Strava_StoreValue($hash,$name,"access_token",$hash->{helper}{access_token});
+		} else {
+			Log3 $name, 5, "$name: Shutdown - update access_token";
+			setKeyValue( $hash->{TYPE} . "_" . $name . "_access_token", undef );
+			Strava_StoreValue($hash,$name,"access_token",$hash->{helper}{access_token});
+		}
+	}
 }
 
 ##########################
@@ -522,7 +572,7 @@ sub Strava_Rename(@) {
 	my ( $new, $old ) = @_;
 	my $hash = $defs{$new};
 
-	foreach my $value (qw( Client_Secret Refresh_Token )) {
+	foreach my $value (qw( Client_Secret Refresh_Token access_token )) {
 		my $return = Strava_ReadValue($hash,$old,$value);
 		if ($return ne "ERROR: No $value token found") {
 			Strava_StoreValue( $hash, $new, $value, Strava_ReadValue($hash,$old,$value) );
