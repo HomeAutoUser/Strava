@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-06 16:49:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-06 18:59:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -43,8 +43,8 @@ sub Strava_Initialize($) {
 	$hash->{SetFn}    = "Strava_Set";
 	$hash->{UndefFn}  = "Strava_Undef";
 	$hash->{AttrFn}   = "Strava_Attr";
-	$hash->{AttrList} = "disable ";
-											#$readingFnAttributes;
+	$hash->{AttrList} = "disable ".
+											"$readingFnAttributes";
 }
 
 ##########################
@@ -53,9 +53,36 @@ sub Strava_Define($$) {
 	my @arg = split("[ \t][ \t]*", $def);
 	my $name = $arg[0];
 	my $typ = $hash->{TYPE};
+	my $filelogName = "FileLog_$name";
+	my ($autocreateFilelog, $autocreateHash, $autocreateName, $autocreateDeviceRoom, $autocreateWeblinkRoom) = ('%L' . $name . '-%Y-%m.log', undef, 'autocreate', $typ, $typ);
+	my ($cmd, $ret);
 
 	return "Usage: define <name> $name Client_ID"  if(@arg != 3);
 	return "Cannot define $name device. PERL packages ${missingModul} is missing." if ( $missingModul );
+
+	if ($init_done) {
+		if (!defined(AttrVal($autocreateName, "disable", undef)) && !exists($defs{$filelogName})) {
+			### create FileLog ###
+			$autocreateFilelog = AttrVal($autocreateName, "filelog", undef) if (defined AttrVal($autocreateName, "filelog", undef));
+			$autocreateFilelog =~ s/%NAME/$name/g;
+			$cmd = "$filelogName FileLog $autocreateFilelog $name";
+			Log3 $filelogName, 2, "$name: define $cmd";
+			$ret = CommandDefine(undef, $cmd);
+			if($ret) {
+				Log3 $filelogName, 2, "$name: ERROR: $ret";
+			} else {
+				### Attributes ###
+				CommandAttr($hash,"$filelogName room $autocreateDeviceRoom");
+				CommandAttr($hash,"$filelogName logtype text");
+				CommandAttr($hash,"$name room $autocreateDeviceRoom");
+			}
+		}
+
+		### Attributes ###
+		CommandAttr($hash,"$name room $typ") if (!defined AttrVal($name, "room", undef));
+		CommandAttr($hash,"$name event-min-interval .*:300") if (!defined AttrVal($name, "event-min-interval", undef));
+		CommandAttr($hash,"$name event-on-change-reading .*") if (!defined AttrVal($name, "event-on-change-reading", undef));
+	}
 
 	### default value´s ###
 	readingsBeginUpdate($hash);
@@ -581,25 +608,107 @@ sub Strava_DeleteValue($$) {
 
 =pod
 =item [helper|device|command]
-=item summary Kurzbeschreibung in Englisch was MYMODULE steuert/unterstützt
-=item summary_DE Kurzbeschreibung in Deutsch was MYMODULE steuert/unterstützt
+=item summary Retrieve the data from his Strava account
+=item summary_DE Abrufen der Daten von seinem Strava Account
 
 =begin html
 
 <a name="Strava"></a>
-<h3>Strava API</h3>
+<h3>Strava</h3>
 <ul>
-This is an Strava API module.<br>
-</ul>
+	The Strava module is the connection to the <a href="https://www.strava.com/">Strava</a> portal of the same name, which you can use to record and evaluate your activities.<br>
+	An account is required for the use and also a registration of the API. The connection is documented <a href="https://developers.strava.com/">here</a>.<br>
+	<br>
+	To register this API, create yourself under your account -> Settings --> My API - personal <a href="https://www.strava.com/settings/api">access via token</a>.<br>
+	The tokens thus assigned should be treated confidentially and you need them to retrieve the data.<br>
+	<i><u>It is needed Client_ID / Client_Secret and Refresh_Token.</u></i><br>
+	<br><br>
+
+	<b>Define</b><br>
+		<ul><code>define &lt;NAME&gt; Strava &lt;Client_ID&gt;</code></ul>
+
+	<br>
+	<b>Set</b><br>
+		<ul>
+		<a name="AuthApp_code"></a>
+		<li>AuthApp_code: sets the code that you get as a return for authentication</li><a name=""></a>
+		<a name="Client_Secret"></a>
+		<li>Client_Secret: sets the Client_Secret, which is necessary</li><a name=""></a>
+		<a name="Client_Secret_delete"></a>
+		<li>Client_Secret_delete: delete Client_Secret. From now on you will no longer get access.</li><a name=""></a>
+		<a name="Refresh_Token"></a>
+		<li>Refresh_Token: sets the Refresh_Token, which is necessary</li><a name=""></a>
+		<a name="Refresh_Token_delete"></a>
+		<li>Refresh_Token_delete: deletes the Refresh_Token. From now on you only have limited access.</li><a name=""></a>
+		</ul>
+
+	<br><br>
+	<b>Get</b><br>
+		<ul>
+		<a name="AuthApp"></a>
+		<li>AuthApp: Starts and completes authentication for use</li><a name=""></a>
+		<a name="AuthRefresh"></a>
+		<li>AuthRefresh: gets a new Refresh_Token</li><a name=""></a>
+		<a name="Client_Secret"></a>
+		<li>Client_Secret: shows the entered Client_ID</li><a name=""></a>
+		<a name="Refresh_Token"></a>
+		<li>Refresh_Token: shows the entered Refresh_Token</li><a name=""></a>
+		</ul>
+
+	<br><br>
+	<b>Attribute</b><br>
+	<ul><li><a href="#disable">disable</a></li></ul><br>
 =end html
 
 
 =begin html_DE
 
 <a name="Strava"></a>
-<h3>Strava API</h3>
+<h3>Strava</h3>
 <ul>
-Das ist ein Strava API Modul.<br>
+	Das Strava Modul ist die Anbindung zum namensgleichen Portal <a href="https://www.strava.com/">Strava</a> womit man seine Aktivitäten aufzeichnen und auswerten kann.<br>
+	Für die Nutzung ist ein Account Vorausetzung und zusätzlich eine Registrierung der API. Die Anbindung ist <a href="https://developers.strava.com/">hier</a> dokumentiert.<br>
+	<br>
+	Um diese API zu registrieren, erstellen Sie sich unter Ihrem Account -> Einstellungen --> Meine API - einen persönlichen <a href="https://www.strava.com/settings/api">Zugang via Token</a>.<br>
+	Die somit zugewiesenen Token sollten Sie vertraulich behandeln und benötigen Sie um die Daten abzurufen.<br>
+	<i><u>Benötigt wird die Kunden-ID / Kunden-Geheimfrage und der Aktualisierungs-Token.</u></i><br>
+	<br><br>
+
+	<b>Define</b><br>
+		<ul><code>define &lt;NAME&gt; Strava &lt;Kunden-ID&gt;</code></ul>
+
+	<br>
+	<b>Set</b><br>
+		<ul>
+		<a name="AuthApp_code"></a>
+		<li>AuthApp_code: setzt den Code, welchen man als Return bei der Authentifizierung erhält</li><a name=""></a>
+		<a name="Client_Secret"></a>
+		<li>Client_Secret: setzt die Kunden-Geheimfrage, welche notwendig ist</li><a name=""></a>
+		<a name="Client_Secret_delete"></a>
+		<li>Client_Secret_delete: löscht die Kunden-Geheimfrage. Ab sofort erhält man keinen Zugang mehr.</li><a name=""></a>
+		<a name="Refresh_Token"></a>
+		<li>Refresh_Token: setzt den Aktualisierungs-Token, welcher notwendig ist</li><a name=""></a>
+		<a name="Refresh_Token_delete"></a>
+		<li>Refresh_Token_delete: löscht den Aktualisierungs-Token. Ab sofort hat man nur noch einen zeitlich beschränken Zugang.</li><a name=""></a>
+		</ul>
+
+	<br><br>
+	<b>Get</b><br>
+		<ul>
+		<a name="AuthApp"></a>
+		<li>AuthApp: Startet und Vollendet die Authentifizierung zur Nutzung</li><a name=""></a>
+		<a name="AuthRefresh"></a>
+		<li>AuthRefresh: ruft einen neuen Aktualisierungs-Token ab</li><a name=""></a>
+		<a name="Client_Secret"></a>
+		<li>Client_Secret: gibt die eingegebene Kunden-ID wieder</li><a name=""></a>
+		<a name="Refresh_Token"></a>
+		<li>Refresh_Token: gibt den eingegebene Aktualisierungs-Token wieder</li><a name=""></a>
+		</ul>
+
+	<br><br>
+	<b>Attribute</b><br>
+	<ul><li><a href="#disable">disable</a></li></ul><br>
+
 </ul>
 =end html_DE
 
