@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-06 18:59:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-07 18:59:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -32,6 +32,7 @@ use HttpUtils;
 my $missingModul		= "";
 eval "use JSON;1" or $missingModul .= "JSON ";
 eval "use Digest::MD5;1" or $missingModul .= "Digest::MD5 ";
+eval "use Encode qw(encode encode_utf8 decode_utf8);1" or $missingModul .= "Encode || libencode-perl, ";
 
 ##########################
 sub Strava_Initialize($) {
@@ -151,6 +152,7 @@ sub Strava_Get($$$@) {
 			return "ERROR: necessary $value token failed!\n\nPlease set this token with cmd \"set $name $value\""
 			if ($return eq "ERROR: No $value value found");
 		}
+		Log3 $name, 4, "$name: Get, $cmd - check values finished";
 	}
 
 	if ($cmd eq "activity") {
@@ -189,7 +191,7 @@ sub Strava_Get($$$@) {
 ########################## ########################## ##########################
 sub Strava_Data_exchange($$$) {
 	my ($hash,$cmd,$cmd2) = @_;
-	my $access_token = $hash->{helper}{access_token} ? $hash->{helper}{access_token} : "";
+	my $access_token = exists($hash->{helper}{access_token}) ? $hash->{helper}{access_token} : "";
 	my $datahash;
 	my $method;
 	my $name = $hash->{NAME};
@@ -263,6 +265,11 @@ sub Strava_Data_exchange($$$) {
 		# activities/{id}/kudos      - one activity kudos
 
 		my $activities = $cmd2 ne "" ? "activities/$cmd2" : "activities";
+
+		# same output
+		#https://www.strava.com/api/v3/activities/?id=08153311&access_token=...
+		#https://www.strava.com/api/v3/activities/?access_token=...
+
 		$url = 'https://www.strava.com/api/v3/'.$activities.'?access_token='.$access_token;
 		$method = "GET";
 
@@ -275,7 +282,7 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "athlete") { # https://developers.strava.com/docs/reference/#api-Athletes
 		## athlete - statistic to user ##
-		$url = 'https://www.strava.com/api/v3/athlete?access_token='.$access_token;
+		$url = 'https://www.strava.com/api/v3/athlete/?access_token='.$access_token;
 		$method = "GET";
 
 		$datahash = {	url        => $url,
@@ -332,7 +339,7 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if($cmd eq "activity" || $cmd eq "athlete" || $cmd eq "stats") {
-		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /invalid/ || $data =~ /Resource Not Found/) {
+		if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /invalid/ || $data =~ /Resource Not Found/ || $data =~ /Forbidden/) {
 			Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
 
 			$state = "Error: $cmd, no data retrieval";
@@ -361,7 +368,6 @@ sub Strava_Data_exchange($$$) {
 	readingsBeginUpdate($hash);
 
 	if ($cmd eq "AuthApp") {
-		$hash->{_AuthApp_access_token} = $json->{access_token} if(defined($json->{access_token})); ## for test
 		$hash->{helper}{AuthApp_expires_at} = $json->{expires_at} if(defined($json->{expires_at}));
 
 		my $athlete_adress = "";
@@ -390,12 +396,36 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "AuthRefresh") {
-		$hash->{_AuthRefresh_access_token} = $json->{access_token} if(defined($json->{access_token}));   ## for test
-		$hash->{token_expires_at} = FmtDateTime($json->{expires_at}) if(defined($json->{expires_at}));
-		$hash->{helper}{AuthRefresh_expires_at} = $json->{expires_at} if(defined($json->{expires_at}));
-		$hash->{helper}{AuthRefresh_refresh_toke} = $json->{refresh_toke} if(defined($json->{refresh_toke}));	
+		if(defined($json->{access_token}) && $json->{access_token} ne $hash->{helper}{access_token}) {
+			Log3 $name, 4, "$name: Data_exchange, $cmd - access_token are updated to ".$json->{access_token};
+			$hash->{helper}{access_token} = $json->{access_token};
+		} else {
+			Log3 $name, 4, "$name: Data_exchange, $cmd - access_token is current, not updated!";
+		}
 
-		#InternalTimer(gettimeofday()+$json->{expires_in}-60, "Strava_AuthRefresh", $hash, 0);
+		if(defined($json->{refresh_token}) && $json->{refresh_token} ne $Refresh_Token) {
+			Log3 $name, 4, "$name: Data_exchange, $cmd - refresh_token are updated to ".$json->{refresh_token};
+
+			## delete old Refresh_Token
+			my $return = Strava_ReadValue($hash,$name,"Refresh_Token");
+			setKeyValue( $hash->{TYPE} . "_" . $name . "_Refresh_Token", undef ) if ($return ne "ERROR: No Refresh_Token token found");
+			## save new Refresh_Token
+			Strava_StoreValue($hash,$name,"Refresh_Token",$json->{refresh_token});
+		} else {
+			Log3 $name, 4, "$name: Data_exchange, $cmd - refresh_token is current, not updated!";
+		}
+
+		if(defined($json->{expires_at})) {
+			$hash->{token_expires_at} = FmtDateTime($json->{expires_at});
+			Log3 $name, 4, "$name: Data_exchange, $cmd - expires_at: ".$json->{expires_at}." -> ".$hash->{token_expires_at};
+		}
+
+		if(defined($json->{expires_in})) {
+			Log3 $name, 4, "$name: Data_exchange, $cmd - expires_in: ".$json->{expires_in}." seconds";
+			## set timer for new AuthRefresh action
+			RemoveInternalTimer($hash);
+			InternalTimer(gettimeofday()+$json->{expires_in}-60, "Strava_RefreshToken", $hash, 0);
+		}
 	}
 
 	if ($cmd eq "AuthApp" || $cmd eq "AuthRefresh") {
@@ -405,7 +435,7 @@ sub Strava_Data_exchange($$$) {
 
 	if ($cmd eq "Deauth") {
 		## delete helpers ##
-		foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at access_token )) {
+		foreach my $value (qw( AuthApp AuthApp_expires_at access_token )) {
 			delete $hash->{helper}{$value} if(defined($hash->{helper}{$value}));
 		}
 
@@ -413,6 +443,20 @@ sub Strava_Data_exchange($$$) {
 		foreach my $value (qw( token_expires_at )) {
 			delete $hash->{$value} if(defined($hash->{$value}));
 		}
+	}
+
+	if ($cmd eq "activity") {
+		if ($cmd2 eq "") {
+			# ARRAY
+			for(my $i=0 ; $i < scalar(@{$json}) ; $i++) {
+				Log3 $name, 4, "$typ: Data_exchange, activity - ".sprintf("%02s",($i+1))." ".encode('UTF-8', @{$json}[$i]->{name});
+			}
+		} else {
+			# HASH
+		}
+
+		my $cmd_txt = $cmd2 ne "" ? "one activity" : "last activities";
+		$cmd = $cmd_txt;
 	}
 
 	if ($cmd eq "athlete") {
@@ -437,7 +481,6 @@ sub Strava_Data_exchange($$$) {
 			$divider_txt = "km";
 		}
 		## ToDo - Meilen ???
-
 		if(defined($json->{all_ride_totals}->{count}) && $json->{all_ride_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "ride_all_totals", $json->{all_ride_totals}->{count} );
 			readingsBulkUpdate( $hash, "ride_all_distance", (sprintf "%.2f", ($json->{all_ride_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{all_ride_totals}->{distance}));
@@ -512,7 +555,7 @@ sub Strava_Undef($$) {
 
 	RemoveInternalTimer($hash);
 
-	foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_expires_at AuthRefresh_refresh_toke access_token measurement_preference )) {
+	foreach my $value (qw( AuthApp AuthApp_expires_at AuthRefresh_refresh_toke access_token measurement_preference )) {
 		delete $hash->{helper}{$value} if(defined($hash->{helper}{$value}));
 	}
 
@@ -613,7 +656,7 @@ sub Strava_ReadValue($$$) {
 	my $key    = getUniqueId() . $index;
 	my ( $value, $err );
 
-	Log3 $name, 4, "$name: ReadValue - Read $cmd from file";
+	Log3 $name, 5, "$name: ReadValue - Read $cmd from file";
 
 	( $err, $value ) = getKeyValue($index);
 
@@ -646,6 +689,15 @@ sub Strava_DeleteValue($$) {
 	my ($hash, $valuename) = @_;
 	setKeyValue( $hash->{TYPE} . "_" . $hash->{NAME} . "_$valuename", undef );
 	return "$valuename delete";
+}
+
+##########################
+sub Strava_RefreshToken {
+	my ($hash) = @_;
+	my $name = $hash->{NAME};
+
+	Log3 $name, 4, "$name: RefreshToken is running";
+	Strava_Data_exchange($hash,"AuthRefresh",undef);
 }
 
 ####################################################
