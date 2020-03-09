@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-07 18:59:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-09 18:20:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -84,6 +84,7 @@ sub Strava_Define($$) {
 		### Attributes ###
 		CommandAttr($hash,"$name room $typ") if (!defined AttrVal($name, "room", undef));
 		CommandAttr($hash,"$name event-on-change-reading .*") if (!defined AttrVal($name, "event-on-change-reading", undef));
+		CommandAttr($hash,"$name event-on-update-reading state") if (!defined AttrVal($name, "event-on-update-reading", undef));
 	}
 
 	### default value´s ###
@@ -156,8 +157,8 @@ sub Strava_Get($$$@) {
 	}
 
 	if ($cmd eq "activity") {
-		Strava_Data_exchange($hash,$cmd,$cmd2);
-		return undef;
+		my $return = Strava_Data_exchange($hash,$cmd,$cmd2);
+		return $return;
 	};
 
 	if ($cmd eq "athlete") {
@@ -446,17 +447,37 @@ sub Strava_Data_exchange($$$) {
 	}
 
 	if ($cmd eq "activity") {
+		my $return = "";
+		my $start_date_local;
+
 		if ($cmd2 eq "") {
 			# ARRAY
 			for(my $i=0 ; $i < scalar(@{$json}) ; $i++) {
-				Log3 $name, 4, "$typ: Data_exchange, activity - ".sprintf("%02s",($i+1))." ".encode('UTF-8', @{$json}[$i]->{name});
+				$start_date_local = substr(@{$json}[$i]->{start_date_local},0,10);
+				$start_date_local =~ s/-//g;
+				$return.= $start_date_local." ".encode('UTF-8', @{$json}[$i]->{name})." -> ".@{$json}[$i]->{type}." ".sprintf("%.2f",@{$json}[$i]->{distance})."\n";
 			}
 		} else {
 			# HASH
+			$start_date_local = substr($json->{start_date_local},0,10);
+			$return.= $start_date_local." ".encode('UTF-8', $json->{name})."\n";
+			$return.= $json->{type}." with distance from ".sprintf("%.2f",$json->{distance})."\n\n";
+			## Ride / VirtualRide
+			$return.= "watts_average: ".$json->{average_watts}."\n" if($json->{average_watts} && $json->{average_watts} > 0);
+			$return.= "watts_max: ".$json->{max_watts}."\n" if($json->{max_watts} && $json->{max_watts} > 0);
+			$return.= "cadence_average: ".$json->{average_cadence}."\n" if($json->{average_cadence} && $json->{average_cadence} > 0);
+			## Run - ?
+			## Swim - ?
+			$return.= "moving_time: ".$json->{moving_time}." seconds"."\n";
+			$return.= "kudos: ".$json->{kudos_count};
 		}
 
 		my $cmd_txt = $cmd2 ne "" ? "one activity" : "last activities";
 		$cmd = $cmd_txt;
+
+		readingsBulkUpdate( $hash, "state", "$cmd accomplished" );
+		readingsEndUpdate($hash, 1);
+		return $return;
 	}
 
 	if ($cmd eq "athlete") {
