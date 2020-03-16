@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-09 18:20:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-16 18:20:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -486,68 +486,83 @@ sub Strava_Data_exchange($$$) {
 		$athlete_counts.= " , follower_requests: ".$json->{follower_count} if(defined($json->{follower_count}));
 		readingsBulkUpdate( $hash, "athlete_counts", $athlete_counts ) if ($athlete_counts);
 
+		readingsBulkUpdate( $hash, ".measurement_preference", $json->{measurement_preference} ) if(defined($json->{measurement_preference}));
 		my $athlete_info;
-		$athlete_info = "weight: " . $json->{weight} . " , " if(defined($json->{weight}));
+		my $weight_txt = "";
+		$weight_txt = $json->{measurement_preference} eq "meters" ? "kg" : "lb"; ## Verified via app switching unit of measurement ##
+
+		if(defined($json->{weight})) {
+			my $weight = "";
+			if ($weight_txt eq "kg") {
+				$weight = (sprintf "%.1f", ($json->{weight}));
+			} else {
+				$weight = (sprintf "%.1f", ($json->{weight} * 2.20462));
+			}
+			$athlete_info = "weight: " . $weight . " $weight_txt , ";
+		}
 		$athlete_info.= "FTP: " . $json->{ftp} ." watt" if(defined($json->{ftp}));
 		readingsBulkUpdate( $hash, "athlete_info", $athlete_info ) if ($athlete_info);
-
-		$hash->{helper}{measurement_preference} = $json->{measurement_preference} if(defined($json->{measurement_preference}));
 	}
 
 	if ($cmd eq "stats") {
-		my $divider = 1;
-		my $divider_txt = "";
-		if ($hash->{helper}{measurement_preference} && $hash->{helper}{measurement_preference} eq "meters") {
-			$divider = 1000;
-			$divider_txt = "km";
+		my $factor = 1;
+		my $factor_txt = "";
+		## settings kilometer (km) | weight -> kg
+		if ( ReadingsVal($name, ".measurement_preference", undef) && ReadingsVal($name, ".measurement_preference", undef) eq "meters" ) {
+			$factor = 0.001;
+			$factor_txt = "km";
+		## settings meiles (mi) | weight -> lb
+		} elsif ( ReadingsVal($name, ".measurement_preference", undef) && ReadingsVal($name, ".measurement_preference", undef) eq "feet" ) {
+			$factor = 0.621371;
+			$factor_txt = "mi";
 		}
-		## ToDo - Meilen ???
+
 		if(defined($json->{all_ride_totals}->{count}) && $json->{all_ride_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "ride_all_totals", $json->{all_ride_totals}->{count} );
-			readingsBulkUpdate( $hash, "ride_all_distance", (sprintf "%.2f", ($json->{all_ride_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{all_ride_totals}->{distance}));
+			readingsBulkUpdate( $hash, "ride_all_distance", (sprintf "%.2f", ($json->{all_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_ride_totals}->{distance}));
 			readingsBulkUpdate( $hash, "ride_all_moving_time", (sprintf "%.2f", ($json->{all_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_all_elevation_gain", $json->{all_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{all_ride_totals}->{elevation_gain}));
-			readingsBulkUpdate( $hash, "ride_biggest_distance", (sprintf "%.2f", ($json->{biggest_ride_distance} / $divider)) . " " . $divider_txt ) if(defined($json->{biggest_ride_distance}));
+			readingsBulkUpdate( $hash, "ride_biggest_distance", (sprintf "%.2f", ($json->{biggest_ride_distance} * $factor)) . " " . $factor_txt ) if(defined($json->{biggest_ride_distance}));
 
 			readingsBulkUpdate( $hash, "ride_year_all_totals", $json->{ytd_ride_totals}->{count} );
-			readingsBulkUpdate( $hash, "ride_year_all_distance", (sprintf "%.2f", ($json->{ytd_ride_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{ytd_ride_totals}->{distance}));
+			readingsBulkUpdate( $hash, "ride_year_all_distance", (sprintf "%.2f", ($json->{ytd_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_ride_totals}->{distance}));
 			readingsBulkUpdate( $hash, "ride_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_year_all_elevation_gain", $json->{ytd_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{ytd_ride_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "ride_last4week_all_totals", $json->{recent_ride_totals}->{count} );
-			readingsBulkUpdate( $hash, "ride_last4week_all_distance", (sprintf "%.2f", ($json->{recent_ride_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{recent_ride_totals}->{distance}));
+			readingsBulkUpdate( $hash, "ride_last4week_all_distance", (sprintf "%.2f", ($json->{recent_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_ride_totals}->{distance}));
 			readingsBulkUpdate( $hash, "ride_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_last4week_all_elevation_gain", $json->{recent_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{recent_ride_totals}->{elevation_gain}));
 		};
 		
 		if(defined($json->{all_run_totals}->{count}) && $json->{all_run_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "run_all_totals", $json->{all_run_totals}->{count} );
-			readingsBulkUpdate( $hash, "run_all_distance", (sprintf "%.2f", ($json->{all_run_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{all_run_totals}->{distance}));
+			readingsBulkUpdate( $hash, "run_all_distance", (sprintf "%.2f", ($json->{all_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_run_totals}->{distance}));
 			readingsBulkUpdate( $hash, "run_all_moving_time", (sprintf "%.2f", ($json->{all_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_all_elevation_gain", $json->{all_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{all_run_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "run_year_all_totals", $json->{ytd_run_totals}->{count} );
-			readingsBulkUpdate( $hash, "run_year_all_distance", (sprintf "%.2f", ($json->{ytd_run_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{ytd_run_totals}->{distance}));
+			readingsBulkUpdate( $hash, "run_year_all_distance", (sprintf "%.2f", ($json->{ytd_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_run_totals}->{distance}));
 			readingsBulkUpdate( $hash, "run_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_year_all_elevation_gain", $json->{ytd_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{ytd_run_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "run_last4week_all_totals", $json->{recent_run_totals}->{count} );
-			readingsBulkUpdate( $hash, "run_last4week_all_distance", (sprintf "%.2f", ($json->{recent_run_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{recent_run_totals}->{distance}));
+			readingsBulkUpdate( $hash, "run_last4week_all_distance", (sprintf "%.2f", ($json->{recent_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_run_totals}->{distance}));
 			readingsBulkUpdate( $hash, "run_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_last4week_all_elevation_gain", $json->{recent_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{recent_run_totals}->{elevation_gain}));
 		}
 
 		if(defined($json->{all_swim_totals}->{count}) && $json->{all_swim_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "swim_all_totals", $json->{all_swim_totals}->{count} );
-			readingsBulkUpdate( $hash, "swim_all_distance", (sprintf "%.2f", ($json->{all_swim_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{all_swim_totals}->{distance}));
+			readingsBulkUpdate( $hash, "swim_all_distance", (sprintf "%.2f", ($json->{all_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_swim_totals}->{distance}));
 			readingsBulkUpdate( $hash, "swim_all_moving_time", (sprintf "%.2f", ($json->{all_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_swim_totals}->{moving_time}));
 
 			readingsBulkUpdate( $hash, "swim_year_all_totals", $json->{ytd_swim_totals}->{count} );
-			readingsBulkUpdate( $hash, "swim_year_all_distance", (sprintf "%.2f", ($json->{ytd_swim_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{ytd_swim_totals}->{distance}));
+			readingsBulkUpdate( $hash, "swim_year_all_distance", (sprintf "%.2f", ($json->{ytd_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_swim_totals}->{distance}));
 			readingsBulkUpdate( $hash, "swim_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_swim_totals}->{moving_time}));
 
 			readingsBulkUpdate( $hash, "swim_last4week_all_totals", $json->{recent_swim_totals}->{count} );
-			readingsBulkUpdate( $hash, "swim_last4week_all_distance", (sprintf "%.2f", ($json->{recent_swim_totals}->{distance} / $divider)) . " " . $divider_txt ) if(defined($json->{recent_swim_totals}->{distance}));
+			readingsBulkUpdate( $hash, "swim_last4week_all_distance", (sprintf "%.2f", ($json->{recent_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_swim_totals}->{distance}));
 			readingsBulkUpdate( $hash, "swim_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_swim_totals}->{moving_time}));
 		}
 	}
@@ -600,12 +615,17 @@ sub Strava_Notify($$) {
 	if($devName eq "global" && grep(m/^INITIALIZED|REREADCFG$/, @{$events}) && $typ eq "Strava") {
 		Log3 $name, 4, "$name: Notify is running and starting";
 
-		my $return = Strava_ReadValue($hash,$name,"access_token");
-		if ($return ne "ERROR: No access_token value found") {
+		my $return_at = Strava_ReadValue($hash,$name,"access_token");
+
+		if ($return_at ne "ERROR: No access_token value found") {
 			Log3 $name, 5, "$name: Notify - read access_token";
 			$hash->{helper}{access_token} = Strava_ReadValue($hash,$name,"access_token");
 			$hash->{helper}{AuthApp} = "SUCCESS";
 		}
+
+		my $return_CS = Strava_ReadValue($hash,$name,"Client_Secret");
+		my $return_RT = Strava_ReadValue($hash,$name,"Refresh_Token");
+		CommandGet($hash, "$name AuthRefresh") if ($return_CS ne "ERROR: No Client_Secret value found" && $return_RT ne "ERROR: No Refresh_Token value found");
 	}
 	return undef;
 }
