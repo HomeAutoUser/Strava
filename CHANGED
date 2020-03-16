@@ -1,3 +1,7 @@
+2020-03-16 - Update 88_Strava.pm
+
+- revised of Unit of measurement
+- fix internal token_expires_at after shutdown restart
 2020-03-09 - Update 88_Strava.pm
 
 - revsied readingwrite to logfile
