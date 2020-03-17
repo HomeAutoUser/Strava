@@ -1,3 +1,7 @@
+2020-03-17 - Update 88_Strava.pm
+
+- added stats_interval_TRIGGER to load automatic
+- revised Times READINGS
 2020-03-16 - Update 88_Strava.pm
 
 - revised of Unit of measurement
