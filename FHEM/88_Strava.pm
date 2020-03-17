@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-16 18:20:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-17 12:30:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -18,7 +18,7 @@
 #
 #################################################################
 # Note´s
-# - only test, all security data must encrypted and not plain text
+# - 
 #################################################################
 
 package main;
@@ -46,7 +46,7 @@ sub Strava_Initialize($) {
 	$hash->{SetFn}      = "Strava_Set";
 	$hash->{UndefFn}    = "Strava_Undef";
 	$hash->{AttrFn}     = "Strava_Attr";
-	$hash->{AttrList}   = "disable ".
+	$hash->{AttrList}   = "disable stats_interval_TRIGGER:1h,12h,24h,48h,72h,96h ".
 												"$readingFnAttributes";
 }
 
@@ -173,6 +173,7 @@ sub Strava_Get($$$@) {
 
 	if ($cmd eq "AuthApp") {
 		my $return = Strava_Data_exchange($hash,$cmd,undef);
+		CommandGet($hash, "$name athlete") if (!$return); # Retrieval of athlete data #
 		return $return;
 	};
 
@@ -203,8 +204,8 @@ sub Strava_Data_exchange($$$) {
 
 	my $Client_Secret = Strava_ReadValue($hash,$name,"Client_Secret");
 	my $Refresh_Token = Strava_ReadValue($hash,$name,"Refresh_Token");
-	
-  Log3 $name, 4, "$name: Data_exchange, was calling with command $cmd";
+
+	Log3 $name, 4, "$name: Data_exchange, was calling with command $cmd";
 
 #### all data parameters ####
 	if ($cmd eq "AuthApp") { # https://developers.strava.com/docs/authentication/#oauthoverview
@@ -234,16 +235,16 @@ sub Strava_Data_exchange($$$) {
 		$url = 'https://www.strava.com/api/v3/oauth/token?client_id='.$Client_ID.'&client_secret='.$Client_Secret.'&grant_type=refresh_token&refresh_token='.$Refresh_Token;
 		$method = "POST";
 
-		$datahash =  {	url        => "https://www.strava.com/api/v3/oauth/token",
-										method     => $method,
-										timeout    => 10,
-										noshutdown => 1,
-										data       => {
-																		client_id     => $Client_ID,
-																		client_secret => $Client_Secret,
-																		grant_type    => 'refresh_token',
-																		refresh_token => $Refresh_Token
-																	},
+		$datahash = {	url        => "https://www.strava.com/api/v3/oauth/token",
+									method     => $method,
+									timeout    => 10,
+									noshutdown => 1,
+									data       => {
+																	client_id     => $Client_ID,
+																	client_secret => $Client_Secret,
+																	grant_type    => 'refresh_token',
+																	refresh_token => $Refresh_Token
+																},
 		};
 	}
 
@@ -251,10 +252,10 @@ sub Strava_Data_exchange($$$) {
 		$url = "https://www.strava.com/api/v3/oauth/token/deauthorize?access_token=".$access_token;
 		$method = "POST";
 
-		$datahash =  {	url        => $url,
-										method     => $method,
-										timeout    => 10,
-										noshutdown => 1,
+		$datahash = {	url        => $url,
+									method     => $method,
+									timeout    => 10,
+									noshutdown => 1,
 		};
 	}
 
@@ -355,14 +356,14 @@ sub Strava_Data_exchange($$$) {
 	}
 #### END returns ERROR ####
 
-  my $json = eval { JSON::decode_json($data) };
+	my $json = eval { JSON::decode_json($data) };
 
-  if($@) {
+	if($@) {
 		Log3 $name, 1, "$name: Data_exchange, $cmd - JSON ERROR: $data";
 		return undef;
-  }
+	}
 
-  Log3 $name, 5, "$name: Data_exchange, $cmd - SUCCESS: $data";
+	Log3 $name, 5, "$name: Data_exchange, $cmd - SUCCESS: $data";
 
 #### informations & action ####
 
@@ -384,7 +385,7 @@ sub Strava_Data_exchange($$$) {
 		$athlete_name.= " ".$json->{athlete}->{lastname} if(defined($json->{athlete}->{lastname}));
 		$athlete_name.= " (".$json->{athlete}->{sex}.")" if(defined($json->{athlete}->{sex}));
 		readingsBulkUpdate($hash, "athlete_name" , $athlete_name);
-		
+
 		my $athlete_account = "";
 		my $created_at = $json->{athlete}->{created_at} if(defined($json->{athlete}->{created_at})); # 2013-07-22T12:07:10Z
 		$created_at = "created: ".substr($created_at,0,10);
@@ -424,7 +425,7 @@ sub Strava_Data_exchange($$$) {
 		if(defined($json->{expires_in})) {
 			Log3 $name, 4, "$name: Data_exchange, $cmd - expires_in: ".$json->{expires_in}." seconds";
 			## set timer for new AuthRefresh action
-			RemoveInternalTimer($hash);
+			RemoveInternalTimer($hash,"Strava_RefreshToken");
 			InternalTimer(gettimeofday()+$json->{expires_in}-60, "Strava_RefreshToken", $hash, 0);
 		}
 	}
@@ -520,50 +521,50 @@ sub Strava_Data_exchange($$$) {
 		if(defined($json->{all_ride_totals}->{count}) && $json->{all_ride_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "ride_all_totals", $json->{all_ride_totals}->{count} );
 			readingsBulkUpdate( $hash, "ride_all_distance", (sprintf "%.2f", ($json->{all_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_ride_totals}->{distance}));
-			readingsBulkUpdate( $hash, "ride_all_moving_time", (sprintf "%.2f", ($json->{all_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_ride_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "ride_all_moving_time", (sprintf "%.0f", ($json->{all_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_all_elevation_gain", $json->{all_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{all_ride_totals}->{elevation_gain}));
 			readingsBulkUpdate( $hash, "ride_biggest_distance", (sprintf "%.2f", ($json->{biggest_ride_distance} * $factor)) . " " . $factor_txt ) if(defined($json->{biggest_ride_distance}));
 
 			readingsBulkUpdate( $hash, "ride_year_all_totals", $json->{ytd_ride_totals}->{count} );
 			readingsBulkUpdate( $hash, "ride_year_all_distance", (sprintf "%.2f", ($json->{ytd_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_ride_totals}->{distance}));
-			readingsBulkUpdate( $hash, "ride_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_ride_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "ride_year_all_moving_time", (sprintf "%.0f", ($json->{ytd_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_year_all_elevation_gain", $json->{ytd_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{ytd_ride_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "ride_last4week_all_totals", $json->{recent_ride_totals}->{count} );
 			readingsBulkUpdate( $hash, "ride_last4week_all_distance", (sprintf "%.2f", ($json->{recent_ride_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_ride_totals}->{distance}));
-			readingsBulkUpdate( $hash, "ride_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_ride_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "ride_last4week_all_moving_time", (sprintf "%.0f", ($json->{recent_ride_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_ride_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "ride_last4week_all_elevation_gain", $json->{recent_ride_totals}->{elevation_gain} . " meters" ) if(defined($json->{recent_ride_totals}->{elevation_gain}));
 		};
-		
+
 		if(defined($json->{all_run_totals}->{count}) && $json->{all_run_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "run_all_totals", $json->{all_run_totals}->{count} );
 			readingsBulkUpdate( $hash, "run_all_distance", (sprintf "%.2f", ($json->{all_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_run_totals}->{distance}));
-			readingsBulkUpdate( $hash, "run_all_moving_time", (sprintf "%.2f", ($json->{all_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_run_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "run_all_moving_time", (sprintf "%.1f", ($json->{all_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_all_elevation_gain", $json->{all_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{all_run_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "run_year_all_totals", $json->{ytd_run_totals}->{count} );
 			readingsBulkUpdate( $hash, "run_year_all_distance", (sprintf "%.2f", ($json->{ytd_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_run_totals}->{distance}));
-			readingsBulkUpdate( $hash, "run_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_run_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "run_year_all_moving_time", (sprintf "%.0f", ($json->{ytd_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_year_all_elevation_gain", $json->{ytd_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{ytd_run_totals}->{elevation_gain}));
 
 			readingsBulkUpdate( $hash, "run_last4week_all_totals", $json->{recent_run_totals}->{count} );
 			readingsBulkUpdate( $hash, "run_last4week_all_distance", (sprintf "%.2f", ($json->{recent_run_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_run_totals}->{distance}));
-			readingsBulkUpdate( $hash, "run_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_run_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "run_last4week_all_moving_time", (sprintf "%.0f", ($json->{recent_run_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_run_totals}->{moving_time}));
 			readingsBulkUpdate( $hash, "run_last4week_all_elevation_gain", $json->{recent_run_totals}->{elevation_gain} . " meters" ) if(defined($json->{recent_run_totals}->{elevation_gain}));
 		}
 
 		if(defined($json->{all_swim_totals}->{count}) && $json->{all_swim_totals}->{count} != 0) {
 			readingsBulkUpdate( $hash, "swim_all_totals", $json->{all_swim_totals}->{count} );
 			readingsBulkUpdate( $hash, "swim_all_distance", (sprintf "%.2f", ($json->{all_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{all_swim_totals}->{distance}));
-			readingsBulkUpdate( $hash, "swim_all_moving_time", (sprintf "%.2f", ($json->{all_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_swim_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "swim_all_moving_time", (sprintf "%.0f", ($json->{all_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{all_swim_totals}->{moving_time}));
 
 			readingsBulkUpdate( $hash, "swim_year_all_totals", $json->{ytd_swim_totals}->{count} );
 			readingsBulkUpdate( $hash, "swim_year_all_distance", (sprintf "%.2f", ($json->{ytd_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{ytd_swim_totals}->{distance}));
-			readingsBulkUpdate( $hash, "swim_year_all_moving_time", (sprintf "%.2f", ($json->{ytd_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_swim_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "swim_year_all_moving_time", (sprintf "%.0f", ($json->{ytd_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{ytd_swim_totals}->{moving_time}));
 
 			readingsBulkUpdate( $hash, "swim_last4week_all_totals", $json->{recent_swim_totals}->{count} );
 			readingsBulkUpdate( $hash, "swim_last4week_all_distance", (sprintf "%.2f", ($json->{recent_swim_totals}->{distance} * $factor)) . " " . $factor_txt ) if(defined($json->{recent_swim_totals}->{distance}));
-			readingsBulkUpdate( $hash, "swim_last4week_all_moving_time", (sprintf "%.2f", ($json->{recent_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_swim_totals}->{moving_time}));
+			readingsBulkUpdate( $hash, "swim_last4week_all_moving_time", (sprintf "%.0f", ($json->{recent_swim_totals}->{moving_time} / 60)) . " minutes" ) if(defined($json->{recent_swim_totals}->{moving_time}));
 		}
 	}
 
@@ -580,8 +581,22 @@ sub Strava_Attr() {
 	my $hash = $defs{$name};
 	my $typ = $hash->{TYPE};
 
-	Log3 $name, 4, "$typ: Attr | Attribute $attrName set to $attrValue" if ($cmd eq "set");
-	Log3 $name, 3, "$typ: Attr | Attribute $attrName delete" if ($cmd eq "del");
+	if ($cmd eq "set") {
+		Log3 $name, 4, "$typ: Attr | Attribute $attrName set to $attrValue";
+
+		if ($attrName eq "stats_interval_TRIGGER") {
+			## 1h,12h,24h,48h,72h,96h ##
+			$attrValue = substr($attrValue,0,-1) * 3600;
+			$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$attrValue);
+			RemoveInternalTimer($hash,"Strava_Set_TRIGGER_stats");
+			InternalTimer(gettimeofday()+$attrValue, "Strava_Set_TRIGGER_stats", $name.":".$attrValue, 0);
+		}
+	}
+
+	if ($cmd eq "del") {
+		Log3 $name, 3, "$typ: Attr | Attribute $attrName delete";
+		RemoveInternalTimer($hash,"Strava_Set_TRIGGER_stats") if ($attrName eq "stats_interval_TRIGGER");
+	}
 }
 
 ##########################
@@ -608,9 +623,10 @@ sub Strava_Notify($$) {
 	my ($hash, $dev_hash) = @_;
 	my $name = $hash->{NAME};
 	my $typ = $hash->{TYPE};
-	return "" if(IsDisabled($name));	               # Return without any further action if the module is disabled
-	my $devName = $dev_hash->{NAME};	               # Device that created the events
+	return "" if(IsDisabled($name));          # Return without any further action if the module is disabled
+	my $devName = $dev_hash->{NAME};          # Device that created the events
 	my $events = deviceEvents($dev_hash, 1);
+	my $stats_interval_TRIGGER = AttrVal($name, "stats_interval_TRIGGER", undef);
 
 	if($devName eq "global" && grep(m/^INITIALIZED|REREADCFG$/, @{$events}) && $typ eq "Strava") {
 		Log3 $name, 4, "$name: Notify is running and starting";
@@ -621,11 +637,20 @@ sub Strava_Notify($$) {
 			Log3 $name, 5, "$name: Notify - read access_token";
 			$hash->{helper}{access_token} = Strava_ReadValue($hash,$name,"access_token");
 			$hash->{helper}{AuthApp} = "SUCCESS";
+
+			if ($stats_interval_TRIGGER) {
+				Log3 $name, 5, "$name: Notify - read stats and set TRIGGER stats";
+				$stats_interval_TRIGGER = substr($stats_interval_TRIGGER,0,-1) * 3600;
+				$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$stats_interval_TRIGGER);
+				Strava_Data_exchange($hash,"stats",undef);
+				InternalTimer(gettimeofday()+$stats_interval_TRIGGER, "Strava_Set_TRIGGER_stats", $name.":".$stats_interval_TRIGGER, 0);
+			}
 		}
 
 		my $return_CS = Strava_ReadValue($hash,$name,"Client_Secret");
 		my $return_RT = Strava_ReadValue($hash,$name,"Refresh_Token");
 		CommandGet($hash, "$name AuthRefresh") if ($return_CS ne "ERROR: No Client_Secret value found" && $return_RT ne "ERROR: No Refresh_Token value found");
+
 	}
 	return undef;
 }
@@ -741,6 +766,19 @@ sub Strava_RefreshToken {
 	Strava_Data_exchange($hash,"AuthRefresh",undef);
 }
 
+##########################
+sub Strava_Set_TRIGGER_stats($) {
+	my($param) = @_;
+	my($name,$seconds) = split(':', $param);
+	my $hash = $defs{$name};
+
+	Log3 $name, 3, "$name: Set_TRIGGER_stats is running";
+	Strava_Data_exchange($hash,"stats",undef);
+
+	$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$seconds);
+	InternalTimer(gettimeofday()+$seconds, "Strava_Set_TRIGGER_stats", $name.":".$seconds, 0);
+}
+
 ####################################################
 # Eval-Rückgabewert für erfolgreiches
 # Laden des Moduls
@@ -801,6 +839,9 @@ sub Strava_RefreshToken {
 	<br><br>
 	<b>Attribute</b><br>
 	<ul><li><a href="#disable">disable</a></li></ul><br>
+	<ul><li><a name="stats_interval_TRIGGER">stats_interval_TRIGGER</a><br>
+		Time interval of the statistics from the user, when they should be called automatically (1h,12h,24h,48h,72h,96h)
+	</ul><br>
 =end html
 
 
@@ -851,6 +892,9 @@ sub Strava_RefreshToken {
 	<br><br>
 	<b>Attribute</b><br>
 	<ul><li><a href="#disable">disable</a></li></ul><br>
+		<ul><li><a name="stats_interval_TRIGGER">stats_interval_TRIGGER</a><br>
+		Zeitintervall der Statistik des Benutzers, wann diese automatisch abgerufen werden soll (1h,12h,24h,48h,72h,96h)
+	</ul><br>
 
 </ul>
 =end html_DE
