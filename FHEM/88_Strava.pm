@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 15699 2020-03-17 12:30:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 15699 2020-03-20 12:30:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -589,7 +589,7 @@ sub Strava_Attr() {
 			$attrValue = substr($attrValue,0,-1) * 3600;
 			$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$attrValue);
 			RemoveInternalTimer($hash,"Strava_Set_TRIGGER_stats");
-			InternalTimer(gettimeofday()+$attrValue, "Strava_Set_TRIGGER_stats", $name.":".$attrValue, 0);
+			InternalTimer(gettimeofday()+$attrValue, "Strava_Set_TRIGGER_stats", $name.":".$attrValue, 0) if ($init_done);
 		}
 	}
 
@@ -639,9 +639,9 @@ sub Strava_Notify($$) {
 			$hash->{helper}{AuthApp} = "SUCCESS";
 
 			if ($stats_interval_TRIGGER) {
-				Log3 $name, 5, "$name: Notify - read stats and set TRIGGER stats";
 				$stats_interval_TRIGGER = substr($stats_interval_TRIGGER,0,-1) * 3600;
 				$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$stats_interval_TRIGGER);
+				Log3 $name, 5, "$name: Notify - read stats and set TRIGGER to ".$hash->{stats_next_TRIGGERTIME};
 				Strava_Data_exchange($hash,"stats",undef);
 				InternalTimer(gettimeofday()+$stats_interval_TRIGGER, "Strava_Set_TRIGGER_stats", $name.":".$stats_interval_TRIGGER, 0);
 			}
@@ -674,6 +674,8 @@ sub Strava_Shutdown ($) {
 			Strava_StoreValue($hash,$name,"access_token",$hash->{helper}{access_token});
 		}
 	}
+
+	RemoveInternalTimer($hash);
 }
 
 ##########################
@@ -772,11 +774,13 @@ sub Strava_Set_TRIGGER_stats($) {
 	my($name,$seconds) = split(':', $param);
 	my $hash = $defs{$name};
 
-	Log3 $name, 3, "$name: Set_TRIGGER_stats is running";
-	Strava_Data_exchange($hash,"stats",undef);
+	Log3 $name, 4, "$name: Set_TRIGGER_stats is running";
 
 	$hash->{stats_next_TRIGGERTIME} = FmtDateTime(time()+$seconds);
+	RemoveInternalTimer($hash,"Strava_Set_TRIGGER_stats");
 	InternalTimer(gettimeofday()+$seconds, "Strava_Set_TRIGGER_stats", $name.":".$seconds, 0);
+
+	Strava_Data_exchange($hash,"stats",undef);
 }
 
 ####################################################
