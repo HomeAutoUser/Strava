@@ -1,3 +1,6 @@
+2020-03-20 - Update 88_Strava.pm
+
+- fix InternalTimer
 2020-03-17 - Update 88_Strava.pm
 
 - added stats_interval_TRIGGER to load automatic
