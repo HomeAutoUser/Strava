@@ -14,6 +14,8 @@ The Perl modules can be loaded directly into your FHEM installation:
 ## Community support
 The Github ISSUES is available [here](https://github.com/HomeAutoUser/Strava/issues) for general support.
 
+The FHEM Forum is available [here](https://forum.fhem.de/index.php/topic,109390.0.html) for general support.
+
 ## Bug reports and feature requests
 Identified bugs and feature requests are tracked using [Github Issues](https://github.com/HomeAutoUser/Strava/issues).
 
