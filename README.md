@@ -4,7 +4,7 @@
 * Master branch: Development version (https://github.com/HomeAutoUser/Strava)
 
 ## Prerequisite for use
-You have to get a token in your StravaAccount under Settings -> My API.
+You have to get a token in your StravaAccount under Settings -> My API (https://www.strava.com/settings/api)
 
 ## How to install
 The Perl modules can be loaded directly into your FHEM installation:
