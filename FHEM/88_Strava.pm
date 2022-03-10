@@ -33,12 +33,12 @@ use LWP;
 use HttpUtils;
 
 my $missingModul    = "";
-eval "use JSON;1" or $missingModul .= "JSON ";
-eval "use Digest::MD5;1" or $missingModul .= "Digest::MD5 ";
-eval "use Encode qw(encode encode_utf8 decode_utf8);1" or $missingModul .= "Encode || libencode-perl, ";
+eval {use JSON;1} or $missingModul .= 'JSON ';
+eval {use Digest::MD5;1} or $missingModul .= "Digest::MD5 ";
+eval {use Encode qw(encode encode_utf8 decode_utf8);1} or $missingModul .= "Encode || libencode-perl, ";
 
 ##########################
-sub Strava_Initialize($) {
+sub Strava_Initialize {
   my ($hash) = @_;
 
   $hash->{DefFn}      = "Strava_Define";
@@ -51,10 +51,12 @@ sub Strava_Initialize($) {
   $hash->{AttrFn}     = "Strava_Attr";
   $hash->{AttrList}   = "disable stats_interval_TRIGGER:1h,12h,24h,48h,72h,96h ".
                         "$readingFnAttributes";
+
+  return;
 }
 
 ##########################
-sub Strava_Define($$) {
+sub Strava_Define {
   my ($hash, $def) = @_;
   my @arg = split("[ \t][ \t]*", $def);
   my $name = $arg[0];
@@ -94,11 +96,11 @@ sub Strava_Define($$) {
   readingsBeginUpdate($hash);
   readingsBulkUpdate($hash, "state" , "Defined");
   readingsEndUpdate($hash, 0);
-  return undef;
+  return;
 }
 
 ########################## function to all set action
-sub Strava_Set($$$@) {
+sub Strava_Set {
   my ( $hash, $name, @a ) = @_;
   my $typ = $hash->{TYPE};
   my $setList = "AuthApp_code Client_Secret Client_Secret_delete:noArg Refresh_Token Refresh_Token_delete:noArg";
@@ -119,7 +121,7 @@ sub Strava_Set($$$@) {
   if ($cmd eq "Deauth") {
     Strava_Data_exchange($hash,$cmd,undef);
     FW_directNotify("FILTER=room=$FW_room", "#FHEMWEB:$FW_wname", "location.reload('true')", "");
-    return undef;
+    return;
   };
 
   if ($cmd eq "Client_Secret" || $cmd eq "Refresh_Token") {
@@ -134,12 +136,13 @@ sub Strava_Set($$$@) {
     my $return = Strava_DeleteValue($hash,$cmd);
     return $return;
   }
-  
+
   return "Unknown argument $cmd, choose one of $setList" if (index($setList, $cmd) == -1);
+  return;
 }
 
 ########################## function to all get action
-sub Strava_Get($$$@) {
+sub Strava_Get {
   my ( $hash, $name, $cmd, @a ) = @_;
   my $cmd2 = defined $a[0] ? $a[0] : "";
   my $getlist = "AuthApp:noArg AuthRefresh:noArg Client_Secret:noArg Refresh_Token:noArg ";
@@ -166,12 +169,12 @@ sub Strava_Get($$$@) {
 
   if ($cmd eq "athlete") {
     Strava_Data_exchange($hash,$cmd,undef);
-    return undef;
+    return;
   };
 
   if ($cmd eq "stats") {
     Strava_Data_exchange($hash,$cmd,undef);
-    return undef;
+    return;
   }
 
   if ($cmd eq "AuthApp") {
@@ -182,7 +185,7 @@ sub Strava_Get($$$@) {
 
   if ($cmd eq "AuthRefresh") {
     Strava_Data_exchange($hash,$cmd,undef);
-    return undef; 
+    return; 
   };
 
   if ($cmd eq "Client_Secret" || $cmd eq "Refresh_Token") {
@@ -194,7 +197,7 @@ sub Strava_Get($$$@) {
 }
 
 ########################## ########################## ##########################
-sub Strava_Data_exchange($$$) {
+sub Strava_Data_exchange {
   my ($hash,$cmd,$cmd2) = @_;
   my $access_token = exists($hash->{helper}{access_token}) ? $hash->{helper}{access_token} : "";
   my $datahash;
@@ -210,7 +213,7 @@ sub Strava_Data_exchange($$$) {
 
   Log3 $name, 4, "$name: Data_exchange, was calling with command $cmd";
 
-#### all data parameters ####
+  #### all data parameters ####
   if ($cmd eq "AuthApp") { # https://developers.strava.com/docs/authentication/#oauthoverview
     Log3 $name, 4, "$name: Data_exchange - $cmd parameters are loaded";
     my $callback = "http://localhost/exchange_token";
@@ -312,14 +315,13 @@ sub Strava_Data_exchange($$$) {
       return "ERROR: your athlete_id reading is not found";
     }
   }
-
-#### END data parameters ####
+  #### END data parameters ####
 
   Log3 $name, 4, "$name: Data_exchange -> $method $url" if ($method);
   my($err,$data) = HttpUtils_BlockingGet($datahash);
   Log3 $name, 1, "$name: Data_exchange - $cmd error: $err" if ($err ne "");
 
-#### returns ERROR ####
+  #### returns ERROR ####
   if ($cmd eq "AuthApp") {
     if ($err ne "" || !defined($data) || $data =~ /Authorization Error/ || $data =~ /Bad Request/) {
       Log3 $name, 4, "$name: Data_exchange - $cmd data: $data" if ($data);
@@ -355,24 +357,26 @@ sub Strava_Data_exchange($$$) {
   ## returns ERROR ##
   if ($state) {
     readingsSingleUpdate( $hash, "state", $state, 1 );
-    return undef;
+    return;
   }
-#### END returns ERROR ####
+  #### END returns ERROR ####
 
   my $json = eval { JSON::decode_json($data) };
 
   if($@) {
     Log3 $name, 1, "$name: Data_exchange, $cmd - JSON ERROR: $data";
-    return undef;
+    return;
   }
 
   Log3 $name, 5, "$name: Data_exchange, $cmd - SUCCESS: $data";
 
-#### informations & action ####
-
+  #### informations & action ####
   readingsBeginUpdate($hash);
 
   if ($cmd eq "AuthApp") {
+    my $created_at;
+    my $updated_at;
+
     $hash->{helper}{AuthApp_expires_at} = $json->{expires_at} if(defined($json->{expires_at}));
 
     my $athlete_adress = "";
@@ -390,10 +394,10 @@ sub Strava_Data_exchange($$$) {
     readingsBulkUpdate($hash, "athlete_name" , $athlete_name);
 
     my $athlete_account = "";
-    my $created_at = $json->{athlete}->{created_at} if(defined($json->{athlete}->{created_at})); # 2013-07-22T12:07:10Z
+    $created_at = $json->{athlete}->{created_at} if(defined($json->{athlete}->{created_at})); # 2013-07-22T12:07:10Z
     $created_at = "created: ".substr($created_at,0,10);
     $athlete_account.= $created_at;
-    my $updated_at = $json->{athlete}->{updated_at} if(defined($json->{athlete}->{updated_at})); # 2020-02-24T17:14:03Z
+    $updated_at = $json->{athlete}->{updated_at} if(defined($json->{athlete}->{updated_at})); # 2020-02-24T17:14:03Z
     $updated_at = ", updated: ".substr($updated_at,0,10).", ";
     $athlete_account.= $updated_at;
     $athlete_account.= $json->{athlete}->{premium} eq 1 ? "premium" : "no premium" if(defined($json->{athlete}->{premium}));
@@ -573,13 +577,13 @@ sub Strava_Data_exchange($$$) {
 
   readingsBulkUpdate( $hash, "state", "$cmd accomplished" );
   readingsEndUpdate($hash, 1);
-#### END informations & action ####
+  #### END informations & action ####
 
-  return undef;
+  return;
 }
 
 ########################## function is used to check and modify attributes
-sub Strava_Attr() {
+sub Strava_Attr {
   my ($cmd, $name, $attrName, $attrValue) = @_;
   my $hash = $defs{$name};
   my $typ = $hash->{TYPE};
@@ -600,10 +604,12 @@ sub Strava_Attr() {
     Log3 $name, 3, "$typ: Attr | Attribute $attrName delete";
     RemoveInternalTimer($hash,"Strava_Set_TRIGGER_stats") if ($attrName eq "stats_interval_TRIGGER");
   }
+
+  return;
 }
 
 ##########################
-sub Strava_Undef($$) {
+sub Strava_Undef {
   my ($hash, $arg) = @_;
   my $name = $hash->{NAME};
 
@@ -618,11 +624,11 @@ sub Strava_Undef($$) {
     setKeyValue( $hash->{TYPE} . "_" . $name . "_$value", undef ) if ($return ne "ERROR: No $value token found");
   }
 
-  return undef;
+  return;
 }
 
 #####################
-sub Strava_Notify($$) {
+sub Strava_Notify {
   my ($hash, $dev_hash) = @_;
   my $name = $hash->{NAME};
   my $typ = $hash->{TYPE};
@@ -631,7 +637,7 @@ sub Strava_Notify($$) {
   my $events = deviceEvents($dev_hash, 1);
   my $stats_interval_TRIGGER = AttrVal($name, "stats_interval_TRIGGER", undef);
 
-  if($devName eq "global" && grep(m/^INITIALIZED|REREADCFG$/, @{$events}) && $typ eq "Strava") {
+  if($devName eq "global" && ( grep { m/^INITIALIZED|REREADCFG$/ } @{$events} ) && $typ eq "Strava") {
     Log3 $name, 4, "$name: Notify is running and starting";
 
     my $return_at = Strava_ReadValue($hash,$name,"access_token");
@@ -655,11 +661,11 @@ sub Strava_Notify($$) {
     CommandGet($hash, "$name AuthRefresh") if ($return_CS ne "ERROR: No Client_Secret value found" && $return_RT ne "ERROR: No Refresh_Token value found");
 
   }
-  return undef;
+  return;
 }
 
 #####################
-sub Strava_Shutdown ($) {
+sub Strava_Shutdown {
   my ( $hash ) = @_;
   my $name = $hash->{NAME};
 
@@ -679,10 +685,11 @@ sub Strava_Shutdown ($) {
   }
 
   RemoveInternalTimer($hash);
+  return;
 }
 
 ##########################
-sub Strava_Rename(@) {
+sub Strava_Rename {
   my ( $new, $old ) = @_;
   my $hash = $defs{$new};
 
@@ -693,17 +700,17 @@ sub Strava_Rename(@) {
       setKeyValue( $hash->{TYPE} . "_" . $old . "_$value", undef );
     }
   }
-  return undef; 
+  return;
 }
 
 ##########################
-sub Strava_StoreValue($$$$) {
+sub Strava_StoreValue {
   my ( $hash, $name, $cmd, $value ) = @_;
   my $index     = $hash->{TYPE} . "_" . $name . "_$cmd";
   my $key       = getUniqueId() . $index;
   my $enc_value = "";
 
-  if ( eval "use Digest::MD5;1" ) {
+  if ( eval {use Digest::MD5;1} ) {
   $key  = Digest::MD5::md5_hex( unpack "H*", $key );
   $key .= Digest::MD5::md5_hex($key);
   }
@@ -721,7 +728,7 @@ sub Strava_StoreValue($$$$) {
 }
 
 ##########################
-sub Strava_ReadValue($$$) {
+sub Strava_ReadValue {
   my ( $hash, $name , $cmd ) = @_;
   my $index  = $hash->{TYPE} . "_" . $name . "_$cmd";
   my $key    = getUniqueId() . $index;
@@ -733,11 +740,11 @@ sub Strava_ReadValue($$$) {
 
   if ( defined($err) ) {
     Log3 $name, 3,"$name: ReadValue - unable to read $cmd from file: $err";
-    return undef;
+    return;
   }
 
   if ( defined($value) ) {
-    if ( eval "use Digest::MD5;1" ) {
+    if ( eval {use Digest::MD5;1} ) {
       $key = Digest::MD5::md5_hex( unpack "H*", $key );
       $key .= Digest::MD5::md5_hex($key);
     }
@@ -756,7 +763,7 @@ sub Strava_ReadValue($$$) {
 }
 
 ##########################
-sub Strava_DeleteValue($$) {
+sub Strava_DeleteValue {
   my ($hash, $valuename) = @_;
   setKeyValue( $hash->{TYPE} . "_" . $hash->{NAME} . "_$valuename", undef );
   return "$valuename delete";
@@ -769,10 +776,11 @@ sub Strava_RefreshToken {
 
   Log3 $name, 4, "$name: RefreshToken is running";
   Strava_Data_exchange($hash,"AuthRefresh",undef);
+  return;
 }
 
 ##########################
-sub Strava_Set_TRIGGER_stats($) {
+sub Strava_Set_TRIGGER_stats {
   my($param) = @_;
   my($name,$seconds) = split(':', $param);
   my $hash = $defs{$name};
@@ -784,6 +792,7 @@ sub Strava_Set_TRIGGER_stats($) {
   InternalTimer(gettimeofday()+$seconds, "Strava_Set_TRIGGER_stats", $name.":".$seconds, 0);
 
   Strava_Data_exchange($hash,"stats",undef);
+  return;
 }
 
 ####################################################
