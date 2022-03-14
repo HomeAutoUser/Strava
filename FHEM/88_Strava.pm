@@ -1,5 +1,5 @@
 #################################################################
-# $Id: 88_Strava.pm 0 2022-03-10 12:30:50Z HomeAuto_User $
+# $Id: 88_Strava.pm 0 2022-03-14 12:30:50Z HomeAuto_User $
 #
 # Github - https://github.com/HomeAutoUser/Strava
 #
@@ -89,7 +89,7 @@ sub Strava_Define {
     CommandAttr($hash,"$name event-on-update-reading state") if (!defined AttrVal($name, 'event-on-update-reading', undef));
   }
 
-  $hash->{VERSION}  = '1.1';
+  $hash->{VERSION}  = '1.2';
 
   ### default value´s ###
   readingsBeginUpdate($hash);
@@ -369,13 +369,14 @@ sub Strava_Data_exchange {
 
   Log3 $name, 5, "$name: Data_exchange, $cmd - SUCCESS: $data";
 
+  my $athlete_account = '';
+  my $created_at;
+  my $updated_at;
+
   #### informations & action ####
   readingsBeginUpdate($hash);
 
   if ($cmd eq 'AuthApp') {
-    my $created_at;
-    my $updated_at;
-
     $hash->{helper}{AuthApp_expires_at} = $json->{expires_at} if(defined($json->{expires_at}));
 
     my $athlete_adress = '';
@@ -392,7 +393,6 @@ sub Strava_Data_exchange {
     $athlete_name.= ' ('.$json->{athlete}->{sex}.')' if(defined($json->{athlete}->{sex}));
     readingsBulkUpdate($hash, 'athlete_name' , $athlete_name);
 
-    my $athlete_account = '';
     $created_at = $json->{athlete}->{created_at} if(defined($json->{athlete}->{created_at})); # 2013-07-22T12:07:10Z
     $created_at = 'created: '.substr($created_at,0,10);
     $athlete_account.= $created_at;
@@ -493,22 +493,36 @@ sub Strava_Data_exchange {
     $athlete_counts.= ' , follower_requests: '.$json->{follower_count} if(defined($json->{follower_count}));
     readingsBulkUpdate( $hash, 'athlete_counts', $athlete_counts ) if ($athlete_counts);
 
-    readingsBulkUpdate( $hash, '.measurement_preference', $json->{measurement_preference} ) if(defined($json->{measurement_preference}));
     my $athlete_info;
     my $weight_txt = '';
-    $weight_txt = $json->{measurement_preference} eq 'meters' ? 'kg' : 'lb'; ## Verified via app switching unit of measurement ##
+
+    if(defined($json->{measurement_preference})) {
+      readingsBulkUpdate( $hash, '.measurement_preference', $json->{measurement_preference} );
+      $weight_txt = $json->{measurement_preference} eq 'meters' ? 'kg' : 'lb'; ## Verified via app switching unit of measurement ##
+    }
 
     if(defined($json->{weight})) {
       my $weight = '';
       if ($weight_txt eq 'kg') {
         $weight = (sprintf "%.1f", ($json->{weight}));
-      } else {
+      } elsif ($weight_txt eq 'lb') {
         $weight = (sprintf "%.1f", ($json->{weight} * 2.20462));
+      } else {
+        $weight = (sprintf "%.1f", ($json->{weight}));
       }
-      $athlete_info = 'weight: ' . $weight . " $weight_txt , ";
+      $athlete_info = 'weight: ' . $weight . $weight_txt;
     }
-    $athlete_info.= 'FTP: ' . $json->{ftp} .' watt' if(defined($json->{ftp}));
+    $athlete_info.= ', FTP: ' . $json->{ftp} .' watt' if(defined($json->{ftp}));
     readingsBulkUpdate( $hash, 'athlete_info', $athlete_info ) if ($athlete_info);
+
+    $created_at = $json->{created_at} if(defined($json->{created_at})); # 2013-07-22T12:07:10Z
+    $created_at = 'created: '.substr($created_at,0,10);
+    $athlete_account.= $created_at;
+    $updated_at = $json->{updated_at} if(defined($json->{updated_at})); # 2020-02-24T17:14:03Z
+    $updated_at = ', updated: '.substr($updated_at,0,10).', ';
+    $athlete_account.= $updated_at;
+    $athlete_account.= $json->{premium} eq 'true' ? 'premium' : 'no premium' if(defined($json->{premium}));
+    readingsBulkUpdate($hash, 'athlete_account' , $athlete_account);
   }
 
   if ($cmd eq 'stats') {
